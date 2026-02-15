@@ -1,0 +1,34 @@
+Nombre del Producto
+Clasificación
+Tipo de Producto
+¿Posible vender en cantidad decimal?
+¿Controlarás el stock del producto?
+Estado
+Impuestos
+Variante
+Código universal de producto
+Codigo universal
+marca
+modelo
+Motivo de GTIN
+Motivo de GTIN vacío
+Codigo universal del producto
+GTIN
+Motivo GTIN vacío 
+Motivo GTIN vacia
+Motivo GTIN de producto
+CODIGO UNIVERSAL DEL PRODRUCTO 
+motivo GTIN
+Mtivo GTIN vacio
+EQUIMAPIENTO
+MEDIDA
+TIPO DE UNION
+¿permitirás ventas sin stock?
+Código de Barras
+SKU
+Marca
+Sucursales
+Fecha de creacion
+Estado Variante
+Clave de producto
+Unidad de medida
