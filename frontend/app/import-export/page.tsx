@@ -44,8 +44,9 @@ export default function ImportExportPage() {
     }, [uploadResult, purgeResult]);
 
     async function handleUpload(file: File) {
-        if (!file.name.endsWith(".xlsx")) {
-            setUploadError("Only .xlsx files are supported.");
+        const isAllowed = file.name.endsWith(".xlsx") || file.name.endsWith(".csv");
+        if (!isAllowed) {
+            setUploadError("Only .xlsx and .csv files are supported.");
             return;
         }
 
@@ -145,7 +146,7 @@ export default function ImportExportPage() {
                         </div>
                         <div>
                             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Import Data</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Upload an Excel file (.xlsx) with the original format</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Upload an Excel (.xlsx) or CSV file with the original format</p>
                         </div>
                     </div>
 
@@ -155,16 +156,15 @@ export default function ImportExportPage() {
                         onDragLeave={() => setDragOver(false)}
                         onDrop={handleDrop}
                         onClick={() => fileInputRef.current?.click()}
-                        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 transition-colors ${
-                            dragOver
-                                ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-500/5"
-                                : "border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
-                        }`}
+                        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-12 transition-colors ${dragOver
+                            ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-500/5"
+                            : "border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
+                            }`}
                     >
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".xlsx"
+                            accept=".xlsx,.csv"
                             onChange={handleFileSelect}
                             className="hidden"
                         />

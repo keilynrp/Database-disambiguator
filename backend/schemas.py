@@ -36,10 +36,10 @@ class ProductBase(BaseModel):
     variant_status: Optional[str] = None
     product_key: Optional[str] = None
     unit_of_measure: Optional[str] = None
+    validation_status: Optional[str] = None
 
 class Product(ProductBase):
     id: int
-    validation_status: str
     normalized_json: Optional[str] = None
 
     class Config:
@@ -61,3 +61,31 @@ class BulkRuleCreate(BaseModel):
     field_name: str
     canonical_value: str
     variations: List[str]
+
+
+class HarmonizationChange(BaseModel):
+    record_id: int
+    field: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+
+
+class HarmonizationLogResponse(BaseModel):
+    id: int
+    step_id: str
+    step_name: str
+    records_updated: int
+    fields_modified: List[str]
+    executed_at: Optional[str] = None
+    reverted: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class UndoRedoResponse(BaseModel):
+    log_id: int
+    action: str
+    records_restored: int
+    step_id: str
+    step_name: str

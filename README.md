@@ -4,10 +4,10 @@ A full-stack tool for importing, browsing, and cleaning product catalog data. It
 
 ## Features
 
-- **Product Catalog** -- Browse, search, inline-edit, and delete product records.
+- **Product Catalog** -- Browse, search, inline-edit, and delete product records. Now features **separate SKU/GTIN columns** and **dynamic pagination** (10-100 rows).
 - **Excel Import / Export** -- Upload `.xlsx` files preserving the original Spanish column format; export filtered results back to Excel.
 - **Data Disambiguation** -- Fuzzy matching groups similar values (typos, casing, synonyms) so you can spot inconsistencies at a glance.
-- **Authority Control** -- Define canonical values and create normalization rules; apply them in bulk to harmonize the database.
+- **Authority Control** -- Define canonical values and create normalization rules; apply them in bulk to harmonize the database. Includes **client-side pagination** for efficient handling of large variation groups.
 - **Analytics Dashboard** -- Key metrics: total products, unique brands/models, validation status, identifier coverage, top brands, and type distribution.
 - **Database Purge** -- Start fresh by deleting all records (with optional rule cleanup) from the Import / Export page.
 

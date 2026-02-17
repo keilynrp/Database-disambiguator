@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface AuthorityGroup {
     main: string;
@@ -43,6 +43,15 @@ export default function AuthorityPage() {
     const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
     const [groupStates, setGroupStates] = useState<Record<number, GroupState>>({});
     const [savingGroup, setSavingGroup] = useState<number | null>(null);
+    const [page, setPage] = useState(0);
+    const [limit, setLimit] = useState(20);
+
+    // Reset pagination when data changes
+    useEffect(() => {
+        setPage(0);
+    }, [data]);
+
+    const visibleGroups = data ? data.groups.slice(page * limit, (page + 1) * limit) : [];
 
     async function analyze() {
         setLoading(true);
@@ -204,30 +213,32 @@ export default function AuthorityPage() {
                 </div>
             )}
 
+
+
             {/* Groups list */}
             {data && (
                 <div className="space-y-4">
-                    {data.groups.map((group, idx) => {
-                        const state = groupStates[idx];
+                    {visibleGroups.map((group, idx) => {
+                        // Adjust index for visible groups to match original data index
+                        const originalIdx = page * limit + idx;
+                        const state = groupStates[originalIdx];
                         if (!state) return null;
 
                         return (
                             <div
-                                key={idx}
-                                className={`rounded-2xl border bg-white p-5 transition-shadow hover:shadow-md dark:bg-gray-900 ${
-                                    state.saved
-                                        ? "border-green-200 dark:border-green-800"
-                                        : "border-gray-200 dark:border-gray-800"
-                                }`}
+                                key={originalIdx}
+                                className={`rounded-2xl border bg-white p-5 transition-shadow hover:shadow-md dark:bg-gray-900 ${state.saved
+                                    ? "border-green-200 dark:border-green-800"
+                                    : "border-gray-200 dark:border-gray-800"
+                                    }`}
                             >
                                 {/* Group header */}
                                 <div className="mb-4 flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                            state.saved
-                                                ? "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400"
-                                                : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-                                        }`}>
+                                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${state.saved
+                                            ? "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                                            : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+                                            }`}>
                                             {state.saved ? "Resolved" : "Pending"}
                                         </span>
                                         <span className="text-xs text-gray-400 dark:text-gray-500">
@@ -235,11 +246,11 @@ export default function AuthorityPage() {
                                         </span>
                                     </div>
                                     <button
-                                        onClick={() => saveGroupRules(idx)}
-                                        disabled={savingGroup === idx}
+                                        onClick={() => saveGroupRules(originalIdx)}
+                                        disabled={savingGroup === originalIdx}
                                         className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                                     >
-                                        {savingGroup === idx ? (
+                                        {savingGroup === originalIdx ? (
                                             <>
                                                 <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -266,7 +277,7 @@ export default function AuthorityPage() {
                                     <input
                                         type="text"
                                         value={state.canonical}
-                                        onChange={(e) => updateCanonical(idx, e.target.value)}
+                                        onChange={(e) => updateCanonical(originalIdx, e.target.value)}
                                         className="h-9 w-full max-w-md rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                     />
                                 </div>
@@ -284,15 +295,14 @@ export default function AuthorityPage() {
                                                 <button
                                                     key={i}
                                                     onClick={() => {
-                                                        if (!isCanonical) toggleExclude(idx, v);
+                                                        if (!isCanonical) toggleExclude(originalIdx, v);
                                                     }}
-                                                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-sm transition-colors ${
-                                                        isCanonical
-                                                            ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
-                                                            : isExcluded
-                                                              ? "border-gray-200 bg-gray-50 text-gray-300 line-through dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-600"
-                                                              : "border-gray-200 bg-gray-50 text-gray-700 hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-red-700 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                                                    }`}
+                                                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-sm transition-colors ${isCanonical
+                                                        ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
+                                                        : isExcluded
+                                                            ? "border-gray-200 bg-gray-50 text-gray-300 line-through dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-600"
+                                                            : "border-gray-200 bg-gray-50 text-gray-700 hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-red-700 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                                        }`}
                                                     title={isCanonical ? "Canonical value" : isExcluded ? "Click to include" : "Click to exclude"}
                                                 >
                                                     {v}
@@ -314,6 +324,59 @@ export default function AuthorityPage() {
                             </div>
                         );
                     })}
+
+                    {/* Pagination Controls */}
+                    {data.groups.length > 0 && (
+                        <div className="flex items-center justify-between border-t border-gray-200 pt-4 dark:border-gray-800">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">Rows per page:</span>
+                                <select
+                                    value={limit}
+                                    onChange={(e) => {
+                                        setLimit(Number(e.target.value));
+                                        setPage(0);
+                                    }}
+                                    className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                    disabled={page === 0}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                >
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                    Previous
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-medium text-white">
+                                        {page + 1}
+                                    </span>
+                                    <span className="text-sm text-gray-500">
+                                        of {Math.ceil(data.groups.length / limit)}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setPage((p) => p + 1)}
+                                    disabled={(page + 1) * limit >= data.groups.length}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                >
+                                    Next
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {data.groups.length === 0 && (
                         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 py-16 dark:border-gray-700">

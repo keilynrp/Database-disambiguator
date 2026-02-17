@@ -63,3 +63,27 @@ class NormalizationRule(Base):
     original_value = Column(String, index=True) # e.g., "mikrosoft"
     normalized_value = Column(String) # e.g., "Microsoft"
     is_regex = Column(Boolean, default=False)
+
+
+class HarmonizationLog(Base):
+    __tablename__ = "harmonization_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    step_id = Column(String, index=True)
+    step_name = Column(String)
+    records_updated = Column(Integer)
+    fields_modified = Column(Text)
+    executed_at = Column(DateTime)
+    details = Column(Text, nullable=True)
+    reverted = Column(Boolean, default=False)
+
+
+class HarmonizationChangeRecord(Base):
+    __tablename__ = "harmonization_change_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    log_id = Column(Integer, index=True)
+    record_id = Column(Integer, index=True)
+    field = Column(String)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)

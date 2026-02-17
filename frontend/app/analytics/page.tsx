@@ -8,6 +8,8 @@ interface Stats {
     unique_brands: number;
     unique_models: number;
     unique_product_types: number;
+    products_with_variants: number;
+    unique_products_with_variants: number;
     validation_status: Record<string, number>;
     identifier_coverage: {
         with_sku: number;
@@ -81,7 +83,7 @@ export default function AnalyticsPage() {
     return (
         <div className="space-y-6">
             {/* Metric cards grid */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <MetricCard
                     label="Total Products"
                     value={stats.total_products.toLocaleString()}
@@ -122,6 +124,17 @@ export default function AnalyticsPage() {
                     }
                     trend={Number(validPct) >= 50 ? { value: `${validCount} records`, positive: true } : { value: `${pendingCount} pending`, positive: false }}
                     subtitle={`${validCount} valid of ${stats.total_products}`}
+                />
+                <MetricCard
+                    label="Product Variants"
+                    value={stats.unique_products_with_variants.toLocaleString()}
+                    icon={
+                        <svg className="h-5 w-5 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                    }
+                    trend={{ value: `${stats.products_with_variants} variant entries`, positive: true }}
+                    subtitle="Products with multiple variants"
                 />
             </div>
 

@@ -10,20 +10,27 @@ interface Product {
     sku: string;
     classification: string;
     product_type: string;
+    variant: string;
+    gtin: string;
+    barcode: string;
+    status: string;
     validation_status: string;
+    [key: string]: any;
 }
 
-type EditableFields = Pick<Product, "product_name" | "brand_capitalized" | "model" | "sku" | "product_type" | "validation_status">;
+type EditableFields = Pick<Product, "product_name" | "brand_capitalized" | "model" | "sku" | "product_type" | "validation_status" | "gtin" | "variant" | "status">;
 
 function StatusBadge({ status }: { status: string }) {
     const styles: Record<string, string> = {
         valid: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
         invalid: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400",
+        active: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
+        inactive: "bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400",
     };
     const fallback = "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
 
     return (
-        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || fallback}`}>
+        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status?.toLowerCase()] || fallback}`}>
             {status}
         </span>
     );
@@ -35,12 +42,21 @@ export default function ProductTable() {
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [page, setPage] = useState(0);
-    const limit = 20;
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [limit, setLimit] = useState(20);
 
     // Edit state
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editData, setEditData] = useState<EditableFields>({
-        product_name: "", brand_capitalized: "", model: "", sku: "", product_type: "", validation_status: "",
+        product_name: "",
+        brand_capitalized: "",
+        model: "",
+        sku: "",
+        product_type: "",
+        validation_status: "",
+        gtin: "",
+        variant: "",
+        status: "",
     });
     const [saving, setSaving] = useState(false);
 
@@ -85,6 +101,9 @@ export default function ProductTable() {
             sku: product.sku || "",
             product_type: product.product_type || "",
             validation_status: product.validation_status || "pending",
+            gtin: product.gtin || "",
+            variant: product.variant || "",
+            status: product.status || "",
         });
     }
 
@@ -153,24 +172,26 @@ export default function ProductTable() {
 
             {/* Table card */}
             <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                <div className="table-container">
+                    <table className="w-full min-w-[1200px] text-left text-sm">
                         <thead>
                             <tr className="border-b border-gray-200 dark:border-gray-800">
-                                <th className={thClass}>ID</th>
-                                <th className={thClass}>Product Name</th>
-                                <th className={thClass}>Brand</th>
-                                <th className={thClass}>Model</th>
-                                <th className={thClass}>SKU</th>
-                                <th className={thClass}>Type</th>
-                                <th className={thClass}>Status</th>
-                                <th className={`${thClass} text-right`}>Actions</th>
+                                <th className={`${thClass} no-wrap w-16`}>ID</th>
+                                <th className={`${thClass} no-wrap`}>Product Name</th>
+                                <th className={`${thClass} no-wrap`}>Brand</th>
+                                <th className={`${thClass} no-wrap`}>Model</th>
+                                <th className={`${thClass} no-wrap`}>SKU</th>
+                                <th className={`${thClass} no-wrap`}>GTIN</th>
+                                <th className={`${thClass} no-wrap`}>Variant</th>
+                                <th className={`${thClass} no-wrap`}>Type</th>
+                                <th className={`${thClass} no-wrap`}>Status</th>
+                                <th className={`${thClass} no-wrap text-right`}>Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={8} className="px-5 py-12 text-center">
+                                    <td colSpan={10} className="px-5 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -182,7 +203,7 @@ export default function ProductTable() {
                                 </tr>
                             ) : products.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-5 py-12 text-center">
+                                    <td colSpan={10} className="px-5 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <svg className="h-10 w-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -209,7 +230,13 @@ export default function ProductTable() {
                                                     <input className={inputClass} value={editData.model} onChange={(e) => setEditData({ ...editData, model: e.target.value })} />
                                                 </td>
                                                 <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.sku} onChange={(e) => setEditData({ ...editData, sku: e.target.value })} />
+                                                    <input className={inputClass} placeholder="SKU" value={editData.sku} onChange={(e) => setEditData({ ...editData, sku: e.target.value })} />
+                                                </td>
+                                                <td className="px-5 py-2.5">
+                                                    <input className={inputClass} placeholder="GTIN" value={editData.gtin} onChange={(e) => setEditData({ ...editData, gtin: e.target.value })} />
+                                                </td>
+                                                <td className="px-5 py-2.5">
+                                                    <input className={inputClass} value={editData.variant} onChange={(e) => setEditData({ ...editData, variant: e.target.value })} />
                                                 </td>
                                                 <td className="px-5 py-2.5">
                                                     <input className={inputClass} value={editData.product_type} onChange={(e) => setEditData({ ...editData, product_type: e.target.value })} />
@@ -267,19 +294,37 @@ export default function ProductTable() {
                                             </td>
                                             <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.brand_capitalized || "—"}</td>
                                             <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.model || "—"}</td>
-                                            <td className="px-5 py-3.5">
+                                            <td className="px-5 py-3.5 no-wrap">
                                                 {product.sku ? (
                                                     <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
                                                         {product.sku}
                                                     </code>
-                                                ) : "—"}
+                                                ) : <span className="text-gray-400">—</span>}
                                             </td>
+                                            <td className="px-5 py-3.5 no-wrap">
+                                                {product.gtin ? (
+                                                    <code className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 dark:bg-blue-500/10 dark:text-blue-400">
+                                                        {product.gtin}
+                                                    </code>
+                                                ) : <span className="text-gray-400">—</span>}
+                                            </td>
+                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300 text-xs italic">{product.variant || "—"}</td>
                                             <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.product_type}</td>
                                             <td className="px-5 py-3.5">
                                                 <StatusBadge status={product.validation_status} />
                                             </td>
                                             <td className="px-5 py-3.5">
                                                 <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                                                    <button
+                                                        onClick={() => setSelectedProduct(product)}
+                                                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
+                                                        title="View Details"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                        </svg>
+                                                    </button>
                                                     <button
                                                         onClick={() => startEdit(product)}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
@@ -320,33 +365,96 @@ export default function ProductTable() {
                     </table>
                 </div>
 
+                {/* Details Modal */}
+                {selectedProduct && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+                        <div className="flex h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+                            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedProduct.product_name}</h2>
+                                    <p className="text-sm text-gray-500">Full details and attributes</p>
+                                </div>
+                                <button onClick={() => setSelectedProduct(null)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+                                    <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-6">
+                                <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+                                    {Object.entries(selectedProduct).map(([key, value]) => {
+                                        if (key === "id" || key === "normalized_json") return null;
+                                        // Format key to Header Case
+                                        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                                        return (
+                                            <div key={key} className="flex flex-col gap-1 border-b border-gray-50 pb-2 dark:border-gray-800/50">
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</span>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                    {value !== null && value !== "" ? String(value) : <span className="text-gray-300 italic">No data</span>}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+                                <button
+                                    onClick={() => setSelectedProduct(null)}
+                                    className="w-full rounded-xl bg-gray-100 py-2.5 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                                >
+                                    Close Details
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Pagination */}
                 <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3.5 dark:border-gray-800">
-                    <button
-                        onClick={() => setPage(p => Math.max(0, p - 1))}
-                        disabled={page === 0 || loading}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Previous
-                    </button>
                     <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-medium text-white">
-                            {page + 1}
-                        </span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Rows per page:</span>
+                        <select
+                            value={limit}
+                            onChange={(e) => {
+                                setLimit(Number(e.target.value));
+                                setPage(0);
+                            }}
+                            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                        >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
                     </div>
-                    <button
-                        onClick={() => setPage(p => p + 1)}
-                        disabled={products.length < limit || loading}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                        Next
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </button>
+
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setPage(p => Math.max(0, p - 1))}
+                            disabled={page === 0 || loading}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                        >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Previous
+                        </button>
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-medium text-white">
+                                {page + 1}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setPage(p => p + 1)}
+                            disabled={products.length < limit || loading}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                        >
+                            Next
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

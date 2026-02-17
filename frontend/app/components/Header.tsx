@@ -7,6 +7,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/disambiguation": { title: "Data Disambiguation", subtitle: "Find and resolve data inconsistencies" },
   "/analytics": { title: "Analytics", subtitle: "Key metrics and data quality insights" },
   "/authority": { title: "Authority Control", subtitle: "Normalize and harmonize field values with canonical rules" },
+  "/harmonization": { title: "Data Harmonization", subtitle: "Automated pipeline for cleaning and consolidating product data" },
   "/import-export": { title: "Import / Export", subtitle: "Upload and download product data in Excel format" },
 };
 
