@@ -88,7 +88,7 @@ export default function ProductTable() {
         } finally {
             setLoading(false);
         }
-    }, [debouncedSearch, page]);
+    }, [debouncedSearch, page, limit]);
 
     useEffect(() => { fetchProducts(); }, [fetchProducts]);
 

@@ -61,7 +61,7 @@ export default function ProductVariantView() {
         }
 
         fetchProducts();
-    }, [debouncedSearch, page]);
+    }, [debouncedSearch, page, limit]);
 
     const toggleGroup = (productName: string) => {
         setExpandedGroups(prev => {

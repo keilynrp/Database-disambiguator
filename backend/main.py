@@ -358,6 +358,34 @@ def get_stats(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/brands")
+def get_all_brands(db: Session = Depends(get_db)):
+    brands = db.query(
+        models.RawProduct.brand_capitalized,
+        func.count(models.RawProduct.id).label("count")
+    ).filter(
+        models.RawProduct.brand_capitalized != None
+    ).group_by(
+        models.RawProduct.brand_capitalized
+    ).order_by(func.count(models.RawProduct.id).desc()).all()
+    
+    return [{"name": b[0], "count": b[1]} for b in brands]
+
+
+@app.get("/product-types")
+def get_all_product_types(db: Session = Depends(get_db)):
+    types = db.query(
+        models.RawProduct.product_type,
+        func.count(models.RawProduct.id).label("count")
+    ).filter(
+        models.RawProduct.product_type != None
+    ).group_by(
+        models.RawProduct.product_type
+    ).order_by(func.count(models.RawProduct.id).desc()).all()
+    
+    return [{"name": t[0], "count": t[1]} for t in types]
+
+
 # Reverse mapping: model_field -> original excel header
 EXPORT_COLUMN_MAPPING = {v: k.strip() for k, v in COLUMN_MAPPING.items()}
 

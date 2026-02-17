@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import MetricCard from "../components/MetricCard";
 
 interface Stats {
@@ -222,9 +223,14 @@ export default function AnalyticsPage() {
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 {/* Top brands */}
                 <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">Top Brands</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Most represented brands in database</p>
+                    <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Top Brands</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Most represented brands in database</p>
+                        </div>
+                        <Link href="/brands" className="text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline dark:text-blue-400">
+                            View All
+                        </Link>
                     </div>
                     <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         {stats.top_brands.map((brand, idx) => (
@@ -250,9 +256,14 @@ export default function AnalyticsPage() {
 
                 {/* Product type distribution */}
                 <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">Product Types</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Distribution by product category</p>
+                    <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Product Types</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Distribution by product category</p>
+                        </div>
+                        <Link href="/product-types" className="text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline dark:text-blue-400">
+                            View All
+                        </Link>
                     </div>
                     <div className="divide-y divide-gray-100 dark:divide-gray-800">
                         {stats.type_distribution.map((type) => {
