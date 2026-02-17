@@ -73,6 +73,16 @@ export default function Sidebar() {
       translationKey: 'nav.import_export'
     },
     {
+      label: "Integrations",
+      href: "/integrations",
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-9.86a4.5 4.5 0 00-6.364 6.364L12 10.5" />
+        </svg>
+      ),
+      translationKey: 'nav.integrations'
+    },
+    {
       label: "Settings",
       href: "/settings",
       icon: (

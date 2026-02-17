@@ -18,7 +18,7 @@ interface Product {
     [key: string]: any;
 }
 
-type EditableFields = Pick<Product, "product_name" | "brand_capitalized" | "model" | "sku" | "product_type" | "validation_status" | "gtin" | "variant" | "status">;
+type EditableFields = Pick<Product, "product_name" | "brand_capitalized" | "model" | "sku" | "classification" | "product_type" | "validation_status" | "gtin" | "variant" | "status">;
 
 function StatusBadge({ status }: { status: string }) {
     const styles: Record<string, string> = {
@@ -52,6 +52,7 @@ export default function ProductTable() {
         brand_capitalized: "",
         model: "",
         sku: "",
+        classification: "",
         product_type: "",
         validation_status: "",
         gtin: "",
@@ -99,6 +100,7 @@ export default function ProductTable() {
             brand_capitalized: product.brand_capitalized || "",
             model: product.model || "",
             sku: product.sku || "",
+            classification: product.classification || "",
             product_type: product.product_type || "",
             validation_status: product.validation_status || "pending",
             gtin: product.gtin || "",
@@ -183,6 +185,7 @@ export default function ProductTable() {
                                 <th className={`${thClass} no-wrap`}>SKU</th>
                                 <th className={`${thClass} no-wrap`}>GTIN</th>
                                 <th className={`${thClass} no-wrap`}>Variant</th>
+                                <th className={`${thClass} no-wrap`}>Classification</th>
                                 <th className={`${thClass} no-wrap`}>Type</th>
                                 <th className={`${thClass} no-wrap`}>Status</th>
                                 <th className={`${thClass} no-wrap text-right`}>Actions</th>
@@ -237,6 +240,18 @@ export default function ProductTable() {
                                                 </td>
                                                 <td className="px-5 py-2.5">
                                                     <input className={inputClass} value={editData.variant} onChange={(e) => setEditData({ ...editData, variant: e.target.value })} />
+                                                </td>
+                                                <td className="px-5 py-2.5">
+                                                    <select
+                                                        className={inputClass}
+                                                        value={editData.classification}
+                                                        onChange={(e) => setEditData({ ...editData, classification: e.target.value })}
+                                                    >
+                                                        <option value="">Select...</option>
+                                                        <option value="Producto">Producto</option>
+                                                        <option value="Servicio">Servicio</option>
+                                                        <option value="Pack/Promoción">Pack/Promoción</option>
+                                                    </select>
                                                 </td>
                                                 <td className="px-5 py-2.5">
                                                     <input className={inputClass} value={editData.product_type} onChange={(e) => setEditData({ ...editData, product_type: e.target.value })} />
@@ -309,6 +324,7 @@ export default function ProductTable() {
                                                 ) : <span className="text-gray-400">—</span>}
                                             </td>
                                             <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300 text-xs italic">{product.variant || "—"}</td>
+                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.classification || "—"}</td>
                                             <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.product_type}</td>
                                             <td className="px-5 py-3.5">
                                                 <StatusBadge status={product.validation_status} />

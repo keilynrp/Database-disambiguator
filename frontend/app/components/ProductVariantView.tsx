@@ -145,6 +145,7 @@ export default function ProductVariantView() {
                                                         <th className="px-6 py-3">Brand</th>
                                                         <th className="px-6 py-3">Model</th>
                                                         <th className="px-6 py-3">SKU</th>
+                                                        <th className="px-6 py-3">Classification</th>
                                                         <th className="px-6 py-3">Type</th>
                                                         <th className="px-6 py-3">Status</th>
                                                     </tr>
@@ -159,6 +160,7 @@ export default function ProductVariantView() {
                                                             <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.brand_capitalized || '-'}</td>
                                                             <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.model || '-'}</td>
                                                             <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.sku || '-'}</td>
+                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.classification || '-'}</td>
                                                             <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.product_type || '-'}</td>
                                                             <td className="px-6 py-3">
                                                                 <span className={`px-2 py-1 rounded text-xs ${variant.validation_status === 'valid' ? 'bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-400' :

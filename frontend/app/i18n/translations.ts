@@ -9,6 +9,7 @@ export const translations = {
         'nav.authority': 'Authority Control',
         'nav.import_export': 'Import / Export',
         'nav.harmonization': 'Harmonize',
+        'nav.integrations': 'Integrations',
         'nav.settings': 'Settings',
 
         // Settings
@@ -20,6 +21,9 @@ export const translations = {
         'settings.theme.desc': 'Choose between light and dark mode for the interface.',
         'settings.theme.light': 'Light',
         'settings.theme.dark': 'Dark',
+
+        // Catalog
+        'catalog.classification': 'Classification',
 
         // Common
         'common.save': 'Save',
@@ -38,6 +42,7 @@ export const translations = {
         'nav.authority': 'Control de Autoridad',
         'nav.import_export': 'Importar / Exportar',
         'nav.harmonization': 'Armonización',
+        'nav.integrations': 'Integraciones',
         'nav.settings': 'Configuración',
 
         // Settings
@@ -49,6 +54,9 @@ export const translations = {
         'settings.theme.desc': 'Elige entre modo claro y oscuro para la interfaz.',
         'settings.theme.light': 'Claro',
         'settings.theme.dark': 'Oscuro',
+
+        // Catalog
+        'catalog.classification': 'Clasificación',
 
         // Common
         'common.save': 'Guardar',

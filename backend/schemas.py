@@ -89,3 +89,47 @@ class UndoRedoResponse(BaseModel):
     records_restored: int
     step_id: str
     step_name: str
+
+
+# ── Store Integration Schemas ─────────────────────────────────────────
+
+class StoreConnectionCreate(BaseModel):
+    name: str
+    platform: str                          # woocommerce | shopify | bsale | custom
+    base_url: str
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    access_token: Optional[str] = None
+    custom_headers: Optional[str] = None
+    sync_direction: str = "bidirectional"   # pull | push | bidirectional
+    notes: Optional[str] = None
+
+
+class StoreConnectionUpdate(BaseModel):
+    name: Optional[str] = None
+    platform: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    access_token: Optional[str] = None
+    custom_headers: Optional[str] = None
+    is_active: Optional[bool] = None
+    sync_direction: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class StoreConnectionResponse(BaseModel):
+    id: int
+    name: str
+    platform: str
+    base_url: str
+    is_active: bool
+    last_sync_at: Optional[str] = None
+    created_at: Optional[str] = None
+    product_count: int = 0
+    sync_direction: str = "bidirectional"
+    notes: Optional[str] = None
+    # Credentials are intentionally excluded from responses
+
+    class Config:
+        from_attributes = True

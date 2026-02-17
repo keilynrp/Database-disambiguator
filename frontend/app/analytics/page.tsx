@@ -20,6 +20,7 @@ interface Stats {
     };
     top_brands: { name: string; count: number }[];
     type_distribution: { name: string; count: number }[];
+    classification_distribution: { name: string; count: number }[];
     status_distribution: { name: string; count: number }[];
 }
 
@@ -219,8 +220,8 @@ export default function AnalyticsPage() {
                 </div>
             </div>
 
-            {/* Bottom row: Top Brands + Product Types */}
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            {/* Bottom row: Top Brands + Product Types + Classifications */}
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
                 {/* Top brands */}
                 <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                     <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
@@ -286,6 +287,43 @@ export default function AnalyticsPage() {
                         {stats.type_distribution.length === 0 && (
                             <div className="px-5 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
                                 No product type data available
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Classification distribution */}
+                <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Classifications</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Distribution by classification group</p>
+                        </div>
+                        <Link href="/classifications" className="text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline dark:text-blue-400">
+                            View All
+                        </Link>
+                    </div>
+                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {(stats.classification_distribution || []).map((item) => {
+                            const pct = stats.total_products > 0 ? ((item.count / stats.total_products) * 100).toFixed(1) : "0";
+                            return (
+                                <div key={item.name} className="px-5 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                    <div className="mb-1.5 flex items-center justify-between">
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white">{item.name || "Unclassified"}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400 dark:text-gray-500">{pct}%</span>
+                                            <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-500/10 dark:text-purple-400">
+                                                {item.count.toLocaleString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <ProgressBar value={item.count} max={stats.total_products} color="bg-purple-500" />
+                                </div>
+                            );
+                        })}
+                        {stats.classification_distribution.length === 0 && (
+                            <div className="px-5 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
+                                No classification data available
                             </div>
                         )}
                     </div>

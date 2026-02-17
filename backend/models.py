@@ -87,3 +87,71 @@ class HarmonizationChangeRecord(Base):
     field = Column(String)
     old_value = Column(Text, nullable=True)
     new_value = Column(Text, nullable=True)
+
+
+class StoreConnection(Base):
+    __tablename__ = "store_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)                    # Human-friendly label, e.g. "Mi Tienda WooCommerce"
+    platform = Column(String, index=True)                # woocommerce | shopify | bsale | custom
+    base_url = Column(String)                            # e.g. https://mitienda.com
+    api_key = Column(String, nullable=True)               # Consumer key / API key
+    api_secret = Column(String, nullable=True)            # Consumer secret / API secret
+    access_token = Column(String, nullable=True)          # For OAuth-based platforms (Shopify)
+    custom_headers = Column(Text, nullable=True)          # JSON string for custom API headers
+    is_active = Column(Boolean, default=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime)
+    product_count = Column(Integer, default=0)            # Cached count of mapped products
+    sync_direction = Column(String, default="bidirectional")  # pull | push | bidirectional
+    notes = Column(Text, nullable=True)
+
+
+class StoreSyncMapping(Base):
+    __tablename__ = "store_sync_mappings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, index=True)               # FK to store_connections.id
+    local_product_id = Column(Integer, index=True)       # FK to raw_products.id
+    remote_product_id = Column(String, nullable=True)    # ID in the remote store
+    canonical_url = Column(String, index=True)            # The canonical URL used for mapping
+    remote_sku = Column(String, nullable=True)
+    remote_name = Column(String, nullable=True)
+    remote_price = Column(String, nullable=True)
+    remote_stock = Column(String, nullable=True)
+    remote_status = Column(String, nullable=True)
+    remote_data_json = Column(Text, nullable=True)       # Full remote product data snapshot
+    sync_status = Column(String, default="pending")      # pending | synced | conflict | error
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime)
+
+
+class SyncLog(Base):
+    __tablename__ = "sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, index=True)               # FK to store_connections.id
+    action = Column(String)                              # pull | push | map | unmap
+    status = Column(String)                              # success | error | partial
+    records_affected = Column(Integer, default=0)
+    details = Column(Text, nullable=True)                # JSON with details
+    executed_at = Column(DateTime)
+
+
+class SyncQueueItem(Base):
+    __tablename__ = "sync_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, index=True)               # FK to store_connections.id
+    mapping_id = Column(Integer, nullable=True, index=True)  # FK to store_sync_mappings.id
+    direction = Column(String)                            # pull | push
+    product_name = Column(String, nullable=True)          # For display convenience
+    canonical_url = Column(String, nullable=True)
+    field = Column(String)                                # Which field changed
+    local_value = Column(Text, nullable=True)
+    remote_value = Column(Text, nullable=True)
+    status = Column(String, default="pending", index=True) # pending | approved | rejected | applied
+    created_at = Column(DateTime)
+    resolved_at = Column(DateTime, nullable=True)
+
