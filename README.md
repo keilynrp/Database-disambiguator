@@ -136,9 +136,9 @@ graph TD
     H -->|Predictive Metadata| B
     B -->|Cleaned Data| G[Export back to Excel]
 
-    classDef database fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef database fill:#f9f,color:#000,stroke:#333,stroke-width:2px;
     class B database;
-    classDef api fill:#ffd700,stroke:#333,stroke-width:2px;
+    classDef api fill:#ffd700,color:#000,stroke:#333,stroke-width:2px;
     class H api;
 ```
 
