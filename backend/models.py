@@ -55,6 +55,13 @@ class RawProduct(Base):
     validation_status = Column(String, default="pending") # pending, valid, invalid
     normalized_json = Column(Text, nullable=True) # Store clean version here
 
+    # Scientometric Enrichment Fields
+    enrichment_doi = Column(String, nullable=True)
+    enrichment_citation_count = Column(Integer, default=0)
+    enrichment_concepts = Column(Text, nullable=True) # Stored as comma-separated
+    enrichment_source = Column(String, nullable=True)
+    enrichment_status = Column(String, default="none") # none, pending, completed, failed
+
 class NormalizationRule(Base):
     __tablename__ = "normalization_rules"
     

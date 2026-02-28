@@ -135,6 +135,7 @@ DBDesambiguador/
 │   ├── main.py       ← Endpoints centralizados
 │   ├── models.py     ← Modelos SQLAlchemy (ORM)
 │   ├── schemas.py    ← Validación de datos (Pydantic)
+│   ├── schemas_enrichment.py ← Normalized Data Objects para APIs
 │   └── database.py   ← Configuración de BD
 ├── frontend/         ← SPA (Next.js / React / TypeScript)
 │   ├── app/          ← App Router (file-based routing)
@@ -376,6 +377,7 @@ Cada evolución tiene un **trigger concreto y medible**. No escalamos "por si ac
 | **Testing** | Validación manual + curl | Unit tests, integration tests, CI/CD |
 | **Deploy** | Dev servers locales | Docker Compose, Kubernetes |
 | **Observabilidad** | SyncLog en BD | Prometheus, Grafana, ELK Stack |
+| **Integración Analítica** | [OpenAlex API Worker](SCIENTOMETRICS.md) | Web Scraping Peligroso, LLMs Masivos |
 
 ---
 

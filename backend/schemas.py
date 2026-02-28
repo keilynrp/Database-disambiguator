@@ -37,6 +37,13 @@ class ProductBase(BaseModel):
     product_key: Optional[str] = None
     unit_of_measure: Optional[str] = None
     validation_status: Optional[str] = None
+    
+    # Enrichment fields
+    enrichment_doi: Optional[str] = None
+    enrichment_citation_count: int = 0
+    enrichment_concepts: Optional[str] = None
+    enrichment_source: Optional[str] = None
+    enrichment_status: str = "none"
 
 class Product(ProductBase):
     id: int

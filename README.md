@@ -132,10 +132,14 @@ graph TD
     D -->|Define Canonical| E[Normalization Rules]
     E -->|Apply Bulk| B
     B --> F[Analytics & Reporting]
+    B -->|Scientometric Enrichment| H[OpenAlex API]
+    H -->|Predictive Metadata| B
     B -->|Cleaned Data| G[Export back to Excel]
 
     classDef database fill:#f9f,stroke:#333,stroke-width:2px;
     class B database;
+    classDef api fill:#ffd700,stroke:#333,stroke-width:2px;
+    class H api;
 ```
 
 ---
@@ -184,8 +188,10 @@ The backend exposes a highly documented REST API. Interactive documentation is a
 | `GET`    | `/authority/{field}`    | Get disambiguation + rule annotations|
 | `POST`   | `/rules/apply`          | Apply normalization rules to the DB  |
 | `GET`    | `/stats`                | Retrieve aggregated system stats     |
+| `POST`   | `/enrich/row/{id}`      | Triggers Single Row API Enrichment   |
+| `POST`   | `/enrich/bulk`          | Queues Bulk Records for Enrichment   |
 
-*For the complete API reference, check out [docs/API.md](docs/API.md).*
+*For the complete API reference, check out [docs/API.md](docs/API.md). For Predictive Analytics and API integrations, please read our [Scientometric Integration Strategy](docs/SCIENTOMETRICS.md).*
 
 ---
 

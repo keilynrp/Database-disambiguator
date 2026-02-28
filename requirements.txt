@@ -7,3 +7,10 @@ python-multipart
 uvicorn[standard]
 thefuzz
 python-Levenshtein
+
+rdflib
+pyarrow
+
+pytest
+pytest-asyncio
+httpx

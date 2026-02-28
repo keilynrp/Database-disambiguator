@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import DataSourceSchemaAnalyzer from "../components/DataSourceSchemaAnalyzer";
 
 interface UploadResult {
     message: string;
@@ -238,6 +239,8 @@ export default function ImportExportPage() {
                         </div>
                     )}
                 </div>
+
+                <DataSourceSchemaAnalyzer />
 
                 {/* Export section */}
                 <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">

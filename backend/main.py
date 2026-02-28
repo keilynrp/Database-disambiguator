@@ -9,21 +9,48 @@ import re
 import json
 from datetime import datetime
 
-from backend import models, schemas, database
+from backend import models, schemas, database, enrichment_worker
+from backend.datasource_analyzer import DataSourceAnalyzer
 from sqlalchemy import inspect, text, func
 
 models.Base.metadata.create_all(bind=database.engine)
 
-# Lightweight migration: add 'reverted' column to harmonization_logs if missing
+# Lightweight migration: add enrichment columns
 with database.engine.connect() as conn:
     inspector = inspect(database.engine)
     if "harmonization_logs" in inspector.get_table_names():
         columns = [col["name"] for col in inspector.get_columns("harmonization_logs")]
         if "reverted" not in columns:
             conn.execute(text("ALTER TABLE harmonization_logs ADD COLUMN reverted BOOLEAN DEFAULT 0"))
+            
+    if "raw_products" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("raw_products")]
+        if "enrichment_doi" not in columns:
+            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_doi VARCHAR"))
+            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_citation_count INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_concepts TEXT"))
+            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_source VARCHAR"))
+            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_status VARCHAR DEFAULT 'none'"))
             conn.commit()
 
 app = FastAPI()
+
+import asyncio
+
+@app.on_event("startup")
+async def start_background_workers():
+    # Helper to yield DB sessions for background worker safely
+    def get_db_gen():
+        while True:
+            db = database.SessionLocal()
+            try:
+                yield db
+            finally:
+                pass # The worker will close after each loop iteration
+    
+    # We create the task and let it run
+    asyncio.create_task(enrichment_worker.background_enrichment_worker(get_db_gen()))
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,6 +153,48 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         "matched_columns": matched_columns,
         "unmatched_columns": unmatched_columns,
     }
+
+
+import shutil
+import tempfile
+import os
+
+@app.post("/analyze")
+async def analyze_datasource(file: UploadFile = File(...)):
+    """
+    Analyzes the structure (columns, keys, tags, predicates) of a given file.
+    Supports CSV, Excel, JSON, XML, Parquet, RDF, Logs, etc.
+    """
+    # Create a temporary file preserving the extension since DataSourceAnalyzer relies on it
+    ext = os.path.splitext(file.filename)[1].lower()
+    if not ext:
+        raise HTTPException(status_code=400, detail="File must have an extension to be analyzed")
+
+    fd, temp_path = tempfile.mkstemp(suffix=ext)
+    os.close(fd) # Close file descriptor so we can open it via shutil
+
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Run analyzer
+        structure = DataSourceAnalyzer.analyze(temp_path)
+        
+        return {
+            "filename": file.filename,
+            "format": ext.strip("."),
+            "structure": structure,
+            "count": len(structure)
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing file: {str(e)}")
+    finally:
+        # Clean up
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 
 from sqlalchemy import or_, func, update
 
@@ -246,6 +315,25 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit()
     return {"message": "Product deleted", "id": product_id}
+
+
+@app.post("/enrich/row/{product_id}", response_model=schemas.Product)
+def enrich_single_product(product_id: int, db: Session = Depends(get_db)):
+    """Enriches a single row manually (e.g. from a UI click)"""
+    product = db.query(models.RawProduct).filter(models.RawProduct.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Force single enrichment fetch
+    enriched = enrichment_worker.enrich_single_record(db, product)
+    return enriched
+
+@app.post("/enrich/bulk")
+def enrich_bulk_queue(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Queues missing records for background enrichment"""
+    count = enrichment_worker.trigger_enrichment_bulk(db, skip=skip, limit=limit)
+    return {"message": "Bulk queue triggered", "queued_records": count}
+
 
 
 from thefuzz import process, fuzz
