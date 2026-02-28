@@ -75,6 +75,31 @@ class DataSourceAnalyzer:
         return lines
 
     @staticmethod
+    def analyze_bibliographic(file_path: str) -> list[str]:
+        keys = set()
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for i in range(100):
+                line = f.readline()
+                if not line:
+                    break
+                line = line.strip()
+                # Detección de formato RIS (ej: "TI  - Titulo")
+                if len(line) >= 6 and line[2:4] == "  " and line[4] == "-":
+                    keys.add(f"RIS Key: {line[:2]}")
+                # Detección de BibTeX (ej: "author = {Name}")
+                elif "=" in line and ("{" in line or '"' in line):
+                    key = line.split("=")[0].strip()
+                    keys.add(f"BibTeX Key: {key}")
+                # Detección entrada BibTeX
+                elif line.startswith("@"):
+                    keys.add(f"BibTeX Entry: {line.split('{')[0]}")
+        
+        if not keys:
+            return DataSourceAnalyzer.analyze_log(file_path)
+            
+        return list(keys)
+
+    @staticmethod
     def analyze_dataframe(file_path: str) -> list[str]:
         # For serialized DataFrames like Parquet
         try:
@@ -108,7 +133,9 @@ class DataSourceAnalyzer:
             '.rdf': cls.analyze_rdf,
             '.ttl': cls.analyze_rdf,
             '.log': cls.analyze_log,
-            '.txt': cls.analyze_log,
+            '.txt': cls.analyze_bibliographic,
+            '.ris': cls.analyze_bibliographic,
+            '.bib': cls.analyze_bibliographic,
             '.parquet': cls.analyze_dataframe,
             '.pkl': cls.analyze_dataframe
         }

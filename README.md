@@ -51,7 +51,7 @@ As detailed in our [Architecture Documentation](docs/ARCHITECTURE.md), this code
 - 📊 **Real-time Analytics Dashboard**
   Gain insights with key metrics: total products, unique brands/models, validation status, identifier coverage, and more.
 - 🔬 **Data Source Multi-format Pre-Analyzer**
-  Preview complex structures natively before ingestion via Drag-and-Drop. Compatible with abstract models like *JSON-LD, deeply-nested XMLs, RDF triples, and Parquet Dataframes*.
+  Preview complex structures natively before ingestion via Drag-and-Drop. Compatible with abstract models like *JSON-LD, deeply-nested XMLs, RDF triples, Parquet Dataframes*, and **Bibliographic formats (RIS, BibTeX, TXT)** exported from platforms like Scopus and WoS.
 - 🔮 **Predictive Scientometric Enrichment** *(New!)*
   Background worker architecture that fetches key scientific indicators (e.g., citation rates, semantic topics, machine learning concepts) by mapping your catalog against big-data indexers.
   - **Active Tier 1:** OpenAlex API integration via a politely rate-limited custom Python worker.

@@ -72,7 +72,7 @@ export default function DataSourceSchemaAnalyzer() {
                 <div>
                     <h3 className="text-base font-semibold text-gray-900 dark:text-white">Analyze Data Source Schema</h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Preview structure for CSV, JSON, XML, RDF, Parquet, Logs before importing.
+                        Preview structure for CSV, JSON, XML, RDF, Parquet, Logs, and Bibliographic formats (TXT, RIS, BibTeX).
                     </p>
                 </div>
             </div>
@@ -92,7 +92,7 @@ export default function DataSourceSchemaAnalyzer() {
                     type="file"
                     onChange={handleFileSelect}
                     className="hidden"
-                    accept=".csv,.xlsx,.xls,.json,.jsonld,.xml,.rdf,.ttl,.log,.txt,.parquet,.pkl"
+                    accept=".csv,.xlsx,.xls,.json,.jsonld,.xml,.rdf,.ttl,.log,.txt,.ris,.bib,.parquet,.pkl"
                 />
 
                 {analyzing ? (
