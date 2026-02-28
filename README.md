@@ -1,31 +1,87 @@
-# DB Disambiguator
+<div align="center">
 
-A full-stack tool for importing, browsing, and cleaning product catalog data. It detects inconsistencies in key fields (brands, models, product types) using fuzzy string matching, and provides an authority-control workflow to normalize values across the entire database.
+# 🗄️ DB Disambiguator
 
-## Features
+**A Powerful Full-Stack Tool for E-commerce & Product Catalog Data Hygiene**
 
-- **Product Catalog** -- Browse, search, inline-edit, and delete product records. Now features **separate SKU/GTIN columns** and **dynamic pagination** (10-100 rows).
-- **Excel Import / Export** -- Upload `.xlsx` files preserving the original Spanish column format; export filtered results back to Excel.
-- **Data Disambiguation** -- Fuzzy matching groups similar values (typos, casing, synonyms) so you can spot inconsistencies at a glance.
-- **Authority Control** -- Define canonical values and create normalization rules; apply them in bulk to harmonize the database. Includes **client-side pagination** for efficient handling of large variation groups.
-- **Analytics Dashboard** -- Key metrics: total products, unique brands/models, validation status, identifier coverage, top brands, and type distribution.
-- **Database Purge** -- Start fresh by deleting all records (with optional rule cleanup) from the Import / Export page.
+[![Python](https://img.shields.io/badge/Python-3.10+-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)](https://react.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
-## Tech Stack
+*Import, browse, and clean your product catalog data with ease. Detect inconsistencies in key fields using fuzzy string matching and establish authority-control workflows to normalize values across your entire database.*
 
-| Layer    | Technology                          |
-|----------|-------------------------------------|
-| Backend  | Python 3.10+, FastAPI, SQLAlchemy, SQLite |
-| Frontend | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 |
-| Fuzzy matching | thefuzz (token_sort_ratio) + python-Levenshtein |
+[Explore Features](#-features) • [Getting Started](#-quick-start) • [Documentation](#-api-overview) • [Roadmap](#-roadmap)
 
-## Quick Start
+</div>
+
+---
+
+## 🎯 Why DB Disambiguator?
+
+The primary goal of this project is to be **easy to understand, deploy, and use**. Data cleaning can be tedious, especially when dealing with e-commerce catalogs where vendors submit data in varying formats (e.g., "Nike", "nike inc", "NIKE", "Nike, Inc.").
+
+**DB Disambiguador** provides a visual interface to:
+1. **Spot the mess**: Catch typos and variations using fuzzy matching.
+2. **Define the truth**: Select the correct "canonical" value.
+3. **Clean the database**: Apply rules to update thousands of records instantly.
+
+### 🧠 Design Philosophy: Pragmatic & Accessible
+As detailed in our [Architecture Documentation](docs/ARCHITECTURE.md), this codebase governs itself by one rule: **Justified Complexity**. 
+- We avoid over-engineering and premature abstractions.
+- The repository is structured as a straightforward **Monorepo** (FastAPI + Next.js).
+- If something can be solved with a simple dictionary instead of a complex library, we use the dictionary.
+
+*The codebase is intentionally structured to be accessible for beginners and junior developers, while remaining robust enough for production data hygiene tasks. You won't find spaghetti code, but you also won't find unnecessary "astronaut architecture".*
+
+---
+
+## ✨ Features
+
+- 📦 **Interactive Product Catalog**
+  Browse, search, inline-edit, and delete product records. Features dynamic pagination (10-100 rows) and distinct structured fields for SKU/GTIN.
+- 📥 **Native Excel Import & Export**
+  Seamlessly upload `.xlsx` files while preserving the original column formats. Export cleaned & filtered data back to Excel.
+- 🔍 **Fuzzy Data Disambiguation**
+  Leverages advanced string matching algorithms (`token_sort_ratio` & `Levenshtein`) to group typos, different casings, and synonyms effortlessly.
+- 🛡️ **Authority Control & Rules Engine**
+  Define canonical values, create bulk normalization rules, and efficiently process large variation groups using optimized client-side pagination.
+- 📊 **Real-time Analytics Dashboard**
+  Gain insights with key metrics: total products, unique brands/models, validation status, identifier coverage, and more.
+- 🧹 **Database Purge**
+  Easily reset your environment by wiping all records (with optional rule cleanup).
+
+---
+
+## 💻 Tech Stack
+
+Our stack is carefully chosen to provide high performance, excellent developer experience, and scalability.
+
+### Backend Engine
+- **Language**: Python 3.10+
+- **Framework**: FastAPI (High-performance API)
+- **Database**: SQLite with SQLAlchemy ORM
+- **Matching Engine**: `thefuzz` + `python-Levenshtein`
+
+### Frontend Application
+- **Framework**: Next.js 16 (App Router)
+- **UI Library**: React 19
+- **Language**: TypeScript 5
+- **Styling**: Tailwind CSS 4
+
+---
+
+## 🚀 Quick Start
+
+Get the project up and running on your local machine in just a few simple steps.
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+
-- npm 9+
+Ensure you have the following installed:
+- [Python 3.10+](https://www.python.org/downloads/)
+- [Node.js 18+](https://nodejs.org/) & npm 9+
 
 ### 1. Clone the repository
 
@@ -34,11 +90,12 @@ git clone https://github.com/<your-user>/DBDesambiguador.git
 cd DBDesambiguador
 ```
 
-### 2. Backend
+### 2. Set up Backend
 
 ```bash
 # Create and activate virtual environment
 python -m venv .venv
+
 # Windows
 .venv\Scripts\activate
 # macOS / Linux
@@ -47,138 +104,95 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the API server (default: http://localhost:8000)
+# Start the API server
 uvicorn backend.main:app --reload
 ```
+*The API should now be running at `http://localhost:8000`*
 
-### 3. Frontend
+### 3. Set up Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+*Open **[http://localhost:3004](http://localhost:3004)** in your browser to view the application.*
 
-Open **http://localhost:3004** in your browser.
+---
 
-### 4. Import data
+## 🔄 Workflow Architecture
 
-You can import data through the UI (Import / Export page) or via CLI:
+Our system is designed around a continuous improvement loop for your data.
 
-```bash
-# Place your .xlsx file in data/, then:
-python -m scripts.import_data
+```mermaid
+graph TD
+    A[Excel File] -->|Import| B[(Product DB)]
+    B --> C{Disambiguation Tool}
+    C -->|Fuzzy Match| D[Authority Control]
+    D -->|Define Canonical| E[Normalization Rules]
+    E -->|Apply Bulk| B
+    B --> F[Analytics & Reporting]
+    B -->|Cleaned Data| G[Export back to Excel]
+
+    classDef database fill:#f9f,stroke:#333,stroke-width:2px;
+    class B database;
 ```
 
-## Project Structure
+---
 
-```
+## 🗺️ Roadmap
+
+We are constantly improving **DB Disambiguator**. Here is what's coming next:
+
+- [x] **Core Catalog Functionality**: CRUD operations, fuzzy match logic.
+- [x] **Advanced Authority Control**: Bulk rules and client-side pagination.
+- [x] **Analytics Dashboard**: Deep dive into dataset health.
+- [ ] **Machine Learning Matcher**: Integrate embedding-based recommendations for semantic matches.
+- [ ] **Multi-Database Support**: Expand support from SQLite to PostgreSQL and MySQL.
+- [ ] **Authentication & RBAC**: User accounts, SSO integration, and role-based permissions to protect catalog data.
+- [ ] **Scheduled Imports**: Automate ingestion from S3 buckets or external APIs.
+
+---
+
+## 🏗️ Project Structure
+
+<details>
+<summary>Click to expand folder structure</summary>
+
+```text
 DBDesambiguador/
-├── backend/                # FastAPI application
-│   ├── main.py             # API routes & business logic
-│   ├── models.py           # SQLAlchemy models (RawProduct, NormalizationRule)
-│   ├── schemas.py          # Pydantic schemas
-│   └── database.py         # Engine & session configuration
-│
-├── frontend/               # Next.js application
-│   ├── app/
-│   │   ├── page.tsx                    # Product Catalog (home)
-│   │   ├── layout.tsx                  # Root layout (sidebar + header)
-│   │   ├── globals.css                 # Global styles
-│   │   ├── analytics/page.tsx          # Analytics dashboard
-│   │   ├── disambiguation/page.tsx     # Disambiguation tool
-│   │   ├── authority/page.tsx          # Authority control
-│   │   ├── import-export/page.tsx      # Import / Export + Purge
-│   │   └── components/
-│   │       ├── Sidebar.tsx             # Navigation sidebar
-│   │       ├── Header.tsx              # Page header
-│   │       ├── ProductTable.tsx        # Product CRUD table
-│   │       ├── DisambiguationTool.tsx  # Fuzzy-match viewer
-│   │       └── MetricCard.tsx          # Stat card widget
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── scripts/                # Utility CLI scripts
-│   ├── analyze_excel.py    # Extract column names from .xlsx
-│   └── import_data.py      # Bulk import from .xlsx
-│
-├── data/                   # Data files (gitignored .xlsx)
-│   ├── columns.txt         # Reference: original Excel column names
-│   └── README.md
-│
-├── docs/                   # Documentation
-│   ├── API.md              # Full API reference
-│   └── CONTRIBUTING.md     # Contribution guidelines
-│
-├── .gitignore
-├── requirements.txt        # Python dependencies
-├── LICENSE
-└── README.md               # This file
+├── backend/                # FastAPI logic, models & DB setup
+├── frontend/               # Next.js UI, styles & components
+├── scripts/                # Utility CLI tooling (analysis/import)
+├── data/                   # Default storage for .xlsx imports
+├── docs/                   # Detailed API & Contribution docs
+└── README.md               # You are here!
 ```
+</details>
 
-## API Overview
+---
 
-The backend exposes a REST API at `http://localhost:8000`. Interactive docs are available at `/docs` (Swagger UI) and `/redoc`.
+## 🔌 API Overview
+
+The backend exposes a highly documented REST API. Interactive documentation is available at `/docs` *(Swagger UI)* and `/redoc`.
 
 | Method   | Endpoint                | Description                          |
 |----------|-------------------------|--------------------------------------|
-| `GET`    | `/health`               | Health check                         |
 | `GET`    | `/products`             | List products (search, pagination)   |
-| `PUT`    | `/products/{id}`        | Update a product                     |
-| `DELETE` | `/products/{id}`        | Delete a product                     |
-| `DELETE` | `/products/all`         | Purge all products                   |
 | `POST`   | `/upload`               | Import Excel file                    |
-| `GET`    | `/export`               | Export to Excel                      |
-| `GET`    | `/stats`                | Aggregated statistics                |
-| `GET`    | `/disambiguate/{field}` | Fuzzy-match groups for a field       |
-| `GET`    | `/authority/{field}`    | Disambiguation + rule annotations    |
-| `GET`    | `/rules`                | List normalization rules             |
-| `POST`   | `/rules/bulk`           | Create rules from a variation group  |
-| `DELETE` | `/rules/{id}`           | Delete a rule                        |
-| `POST`   | `/rules/apply`          | Apply rules to normalize the DB      |
+| `GET`    | `/disambiguate/{field}` | Get fuzzy-match groups for a field   |
+| `GET`    | `/authority/{field}`    | Get disambiguation + rule annotations|
+| `POST`   | `/rules/apply`          | Apply normalization rules to the DB  |
+| `GET`    | `/stats`                | Retrieve aggregated system stats     |
 
-For detailed request/response schemas, see [docs/API.md](docs/API.md).
+*For the complete API reference, check out [docs/API.md](docs/API.md).*
 
-## Workflow
+---
 
-```
- Excel file
-     │
-     ▼
-  ┌──────────┐     ┌──────────────┐     ┌─────────────────┐
-  │  Import   │────▶│  Product DB  │────▶│  Disambiguation │
-  └──────────┘     └──────────────┘     └────────┬────────┘
-                          │                      │
-                          │                      ▼
-                          │              ┌───────────────┐
-                          │              │   Authority    │
-                          │              │   Control      │
-                          │              └───────┬───────┘
-                          │                      │
-                          │            Create normalization
-                          │                 rules
-                          │                      │
-                          ▼                      ▼
-                   ┌──────────────┐     ┌───────────────┐
-                   │   Analytics  │     │  Apply Rules   │
-                   └──────────────┘     └───────────────┘
-                                               │
-                                               ▼
-                                        Normalized DB
-                                               │
-                                               ▼
-                                        ┌──────────┐
-                                        │  Export   │
-                                        └──────────┘
-```
+## 🤝 Contributing
 
-1. **Import** your product catalog from Excel.
-2. **Browse** and review data in the Product Catalog.
-3. **Disambiguate** key fields to find typos, duplicates, and variations.
-4. **Define canonical values** in Authority Control and save normalization rules.
-5. **Apply rules** to update all matching records in the database.
-6. **Export** the cleaned data back to Excel.
+We welcome contributions! Please see our [Contributing Guidelines](docs/CONTRIBUTING.md) to learn how to propose bugfixes, new features, and improvements to the project.
 
-## License
+## 📄 License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+This project is open-source and available under the **[Apache License 2.0](LICENSE)**.
