@@ -50,6 +50,12 @@ As detailed in our [Architecture Documentation](docs/ARCHITECTURE.md), this code
   Define canonical values, create bulk normalization rules, and efficiently process large variation groups using optimized client-side pagination.
 - 📊 **Real-time Analytics Dashboard**
   Gain insights with key metrics: total products, unique brands/models, validation status, identifier coverage, and more.
+- 🔬 **Data Source Multi-format Pre-Analyzer**
+  Preview complex structures natively before ingestion via Drag-and-Drop. Compatible with abstract models like *JSON-LD, deeply-nested XMLs, RDF triples, and Parquet Dataframes*.
+- 🔮 **Predictive Scientometric Enrichment** *(New!)*
+  Background worker architecture that fetches key scientific indicators (e.g., citation rates, semantic topics, machine learning concepts) by mapping your catalog against big-data indexers.
+  - **Active Tier 1:** OpenAlex API integration via a politely rate-limited custom Python worker.
+  - **Upcoming Tiers:** PubMed, Web of Science (WoS), Scopus, Google Scholar, and Altmetric APIs natively built-in through a modular *Bring Your Own Key* adapter.
 - 🧹 **Database Purge**
   Easily reset your environment by wiping all records (with optional rule cleanup).
 
