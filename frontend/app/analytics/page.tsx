@@ -630,11 +630,11 @@ export default function AnalyticsPage() {
                                 {
                                     phase: "Phase 2",
                                     label: "Restricted Scraping",
-                                    status: "planned",
-                                    badge: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-                                    dot: "bg-amber-400",
+                                    status: "active",
+                                    badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+                                    dot: "bg-emerald-500",
                                     sources: ["Google Scholar (Scholarly)", "Altmetric.com"],
-                                    desc: "Requires rotating proxy infrastructure to bypass anti-bot measures.",
+                                    desc: "Scholarly adapter configured with rotating free proxies avoiding IP bans.",
                                 },
                                 {
                                     phase: "Phase 3",

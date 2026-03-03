@@ -4,14 +4,22 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 
+import logging
+
 from backend import models
 from backend.adapters.enrichment.openalex import OpenAlexAdapter
+from backend.adapters.enrichment.scholar import ScholarAdapter
 
-adapter = OpenAlexAdapter()
+logger = logging.getLogger(__name__)
+
+# Initialize our Phase 1 & Phase 2 adapters
+adapter_openalex = OpenAlexAdapter()
+adapter_scholar = ScholarAdapter(use_free_proxies=True)
 
 def enrich_single_record(db: Session, product: models.RawProduct) -> models.RawProduct:
     """
     Synchronously enriches a single record by title or DOI.
+    Uses a fallback strategy: OpenAlex (Phase 1) -> Google Scholar (Phase 2).
     """
     if not product.product_name and not product.model:
         return product
@@ -20,21 +28,36 @@ def enrich_single_record(db: Session, product: models.RawProduct) -> models.RawP
     if not query:
         return product
         
+    enriched_data = None
+    source = "Unknown"
+    
     try:
-        # We try to search by title
-        results = adapter.search_by_title(query, limit=1)
+        # Phase 1: Try OpenAlex first
+        results = adapter_openalex.search_by_title(query, limit=1)
         if results and len(results) > 0:
             enriched_data = results[0]
+            source = "OpenAlex"
+        else:
+            # Phase 2 Fallback: Try Google Scholar
+            logger.info(f"OpenAlex failed to find data for '{query}'. Falling back to Google Scholar...")
+            results_scholar = adapter_scholar.search_by_title(query, limit=1)
+            if results_scholar and len(results_scholar) > 0:
+                enriched_data = results_scholar[0]
+                source = "Google Scholar"
+            
+        if enriched_data:
+            # Populate our Generalized NDO fields
             product.enrichment_doi = enriched_data.doi
             product.enrichment_citation_count = enriched_data.citation_count
             product.enrichment_concepts = ", ".join(enriched_data.concepts) if enriched_data.concepts else None
-            product.enrichment_source = enriched_data.source_api
+            product.enrichment_source = source
             product.enrichment_status = "completed"
         else:
             product.enrichment_status = "failed"
-            product.enrichment_source = "OpenAlex"
+            product.enrichment_source = "None"
             
     except Exception as e:
+        logger.error(f"Error enriching record ID {product.id}: {e}")
         product.enrichment_status = "failed"
         
     db.commit()
