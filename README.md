@@ -52,10 +52,11 @@ As detailed in our [Architecture Documentation](docs/ARCHITECTURE.md), this code
   Gain insights with key metrics: total products, unique brands/models, validation status, identifier coverage, and more.
 - 🔬 **Data Source Multi-format Pre-Analyzer**
   Preview complex structures natively before ingestion via Drag-and-Drop. Compatible with abstract models like *JSON-LD, deeply-nested XMLs, RDF triples, Parquet Dataframes*, and **Bibliographic formats (RIS, BibTeX, TXT)** exported from platforms like Scopus and WoS.
-- 🔮 **Predictive Scientometric Enrichment** *(New!)*
+- 🔮 **Predictive Scientometric Enrichment & Data Analytics** *(New!)*
   Background worker architecture that fetches key scientific indicators (e.g., citation rates, semantic topics, machine learning concepts) by mapping your catalog against big-data indexers.
-  - **Active Tier 1:** OpenAlex API integration via a politely rate-limited custom Python worker.
-  - **Upcoming Tiers:** PubMed, Web of Science (WoS), Scopus, Google Scholar, and Altmetric APIs natively built-in through a modular *Bring Your Own Key* adapter.
+  - **Phase 1 (Active):** OpenAlex API integration via a politely rate-limited worker.
+  - **Phase 2 (Active):** Google Scholar scraping strategy utilizing rotating free proxies to avoid anti-bot mechanisms.
+  - **Phase 3 (Active):** Premium APIs featuring a BYOK (Bring Your Own Key) architecture for Clarivate Web of Science (WoS).
 - 🧹 **Database Purge**
   Easily reset your environment by wiping all records (with optional rule cleanup).
 
@@ -137,15 +138,20 @@ graph TD
     C -->|Fuzzy Match| D[Authority Control]
     D -->|Define Canonical| E[Normalization Rules]
     E -->|Apply Bulk| B
-    B --> F[Analytics & Reporting]
-    B -->|Scientometric Enrichment| H[OpenAlex API]
-    H -->|Predictive Metadata| B
+    B --> F[Analytics & Predictive Dashboard]
+    B -->|Scientometric Worker| H[Multi-Phase Adapter]
+    H -->|Phase 1| I[OpenAlex API - Free]
+    H -->|Phase 2| J[Google Scholar - Proxy]
+    H -->|Phase 3| K[Web of Science - BYOK]
+    I -->|Predictive Metadata| B
+    J -->|Predictive Metadata| B
+    K -->|Predictive Metadata| B
     B -->|Cleaned Data| G[Export back to Excel]
 
     classDef database fill:#f9f,color:#000,stroke:#333,stroke-width:2px;
     class B database;
     classDef api fill:#ffd700,color:#000,stroke:#333,stroke-width:2px;
-    class H api;
+    class H,I,J,K api;
 ```
 
 ---
@@ -157,6 +163,7 @@ We are constantly improving **DB Disambiguator**. Here is what's coming next:
 - [x] **Core Catalog Functionality**: CRUD operations, fuzzy match logic.
 - [x] **Advanced Authority Control**: Bulk rules and client-side pagination.
 - [x] **Analytics Dashboard**: Deep dive into dataset health.
+- [x] **Scientometric Engine**: 3-Phase cascading workers (OpenAlex, Scholar, Web of Science).
 - [ ] **Machine Learning Matcher**: Integrate embedding-based recommendations for semantic matches.
 - [ ] **Multi-Database Support**: Expand support from SQLite to PostgreSQL and MySQL.
 - [ ] **Authentication & RBAC**: User accounts, SSO integration, and role-based permissions to protect catalog data.
@@ -194,6 +201,7 @@ The backend exposes a highly documented REST API. Interactive documentation is a
 | `GET`    | `/authority/{field}`    | Get disambiguation + rule annotations|
 | `POST`   | `/rules/apply`          | Apply normalization rules to the DB  |
 | `GET`    | `/stats`                | Retrieve aggregated system stats     |
+| `GET`    | `/enrich/stats`         | KPIs, Concept Cloud & Citation info  |
 | `POST`   | `/enrich/row/{id}`      | Triggers Single Row API Enrichment   |
 | `POST`   | `/enrich/bulk`          | Queues Bulk Records for Enrichment   |
 
