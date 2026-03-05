@@ -162,3 +162,17 @@ class SyncQueueItem(Base):
     created_at = Column(DateTime)
     resolved_at = Column(DateTime, nullable=True)
 
+class AIIntegration(Base):
+    """
+    Phase 5: Store settings for Semantic RAG architectures (LLMs and Vector DBs).
+    Supports Cloud (OpenAI, Claude, DeepSeek, XAI, Google) and Local variants.
+    """
+    __tablename__ = "ai_integrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider_name = Column(String, index=True, unique=True)  # openai | anthropic | xai | deepseek | google | local
+    base_url = Column(String, nullable=True)                 # for local/custom endpoints
+    api_key = Column(String, nullable=True)                  # Bring Your Own Key (BYOK)
+    model_name = Column(String, nullable=True)               # e.g., gpt-4o, claude-3.5-sonnet, r1, llama3
+    is_active = Column(Boolean, default=False)               # which provider is the active one?
+    created_at = Column(DateTime)

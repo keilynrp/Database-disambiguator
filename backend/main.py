@@ -1677,3 +1677,74 @@ def get_store_logs(store_id: int, skip: int = 0, limit: int = 20, db: Session = 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+# --- Phase 5: AI / RAG Integrations ---
+class AIIntegrationPayload(schemas.BaseModel):
+    provider_name: str
+    base_url: str | None = None
+    api_key: str | None = None
+    model_name: str | None = None
+
+@app.get("/ai-integrations")
+def get_ai_integrations(db: Session = Depends(get_db)):
+    integrations = db.query(models.AIIntegration).all()
+    return integrations
+
+@app.post("/ai-integrations")
+def create_ai_integration(payload: AIIntegrationPayload, db: Session = Depends(get_db)):
+    existing = db.query(models.AIIntegration).filter(models.AIIntegration.provider_name == payload.provider_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Provider already configured.")
+    new_ai = models.AIIntegration(
+        provider_name=payload.provider_name,
+        base_url=payload.base_url,
+        api_key=payload.api_key,
+        model_name=payload.model_name,
+        is_active=False,
+        created_at=datetime.utcnow()
+    )
+    db.add(new_ai)
+    db.commit()
+    db.refresh(new_ai)
+    return new_ai
+
+@app.put("/ai-integrations/{integration_id}")
+def update_ai_integration(integration_id: int, payload: dict, db: Session = Depends(get_db)):
+    integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+        
+    if "base_url" in payload:
+        integration.base_url = payload["base_url"]
+    if "api_key" in payload:
+        integration.api_key = payload["api_key"]
+    if "model_name" in payload:
+        integration.model_name = payload["model_name"]
+        
+    db.commit()
+    db.refresh(integration)
+    return integration
+
+@app.post("/ai-integrations/{integration_id}/activate")
+def activate_ai_integration(integration_id: int, db: Session = Depends(get_db)):
+    # Deactivate all others
+    db.query(models.AIIntegration).update({"is_active": False})
+    
+    # Activate target
+    integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+        
+    integration.is_active = True
+    db.commit()
+    return {"message": f"{integration.provider_name} activated"}
+
+@app.delete("/ai-integrations/{integration_id}")
+def delete_ai_integration(integration_id: int, db: Session = Depends(get_db)):
+    integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+    db.delete(integration)
+    db.commit()
+    return {"message": "Deleted"}
