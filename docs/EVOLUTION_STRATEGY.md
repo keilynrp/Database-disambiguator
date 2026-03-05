@@ -115,21 +115,29 @@ ukip/
 ├── analyzers/                      # Motores de análisis intercambiables
 │   ├── quantitative/
 │   │   ├── montecarlo.py           # ✅ Implementado — Proyecciones estocásticas
-│   │   ├── correlation.py          # 🔵 Pendiente — Análisis multi-variable
-│   │   └── time_series.py          # 🔵 Pendiente — Proyecciones temporales (ROI)
+│   │   ├── olap_engine.py          # 🔵 Fase 8 — Motor OLAP con DuckDB (CUBE/ROLLUP/PIVOT)
+│   │   ├── correlation.py          # ⬜ Fase 9 — Análisis multi-variable
+│   │   └── time_series.py          # ⬜ Fase 9 — Proyecciones temporales (ROI)
 │   ├── qualitative/
-│   │   ├── topic_modeling.py       # 🔵 Pendiente — BERTopic / LDA
-│   │   ├── sentiment.py            # 🔵 Pendiente — Análisis de sentimiento
-│   │   └── knowledge_gaps.py       # 🔵 Pendiente — Detección de brechas bibliométricas
+│   │   ├── topic_modeling.py       # ⬜ Fase 9 — BERTopic / LDA
+│   │   ├── sentiment.py            # ⬜ Fase 9 — Análisis de sentimiento
+│   │   └── knowledge_gaps.py       # ⬜ Fase 9 — Detección de brechas bibliométricas
 │   └── semantic/
 │       ├── rag_engine.py           # ✅ Implementado — RAG con ChromaDB
-│       └── entity_linker.py        # 🔵 Pendiente — Reconciliación semántica
+│       └── entity_linker.py        # ⬜ Pendiente — Reconciliación semántica
 │
 ├── artifacts/                      # Generadores de salidas de alto valor
-│   ├── templates/                  # 🔵 Pendiente — Plantillas por dominio
-│   ├── report_builder.py           # 🔵 Pendiente — Informes PDF/HTML
-│   ├── roi_calculator.py           # 🔵 Pendiente — Calculadora de ROI multi-escenario
-│   └── export_engine.py            # 🔵 Pendiente — Exportación extendida
+│   ├── templates/                  # ⬜ Pendiente — Plantillas por dominio
+│   ├── report_builder.py           # ⬜ Pendiente — Informes PDF/HTML
+│   ├── roi_calculator.py           # ⬜ Pendiente — Calculadora de ROI multi-escenario
+│   └── export_engine.py            # ⬜ Pendiente — Exportación extendida
+│
+├── data/
+│   ├── database.db                 # ✅ SQLite — OLTP (fuente de verdad operacional)
+│   └── cubes/                      # ⬜ Fase 8 — DuckDB Star Schemas por dominio
+│       ├── science_cube.duckdb
+│       ├── healthcare_cube.duckdb
+│       └── custom_{domain}.duckdb
 │
 ├── domains/                        # Configuraciones específicas por dominio
 │   ├── science.yaml                # 🔵 Pendiente
@@ -268,19 +276,30 @@ UKIP Dashboard
 - [ ] UI de "Schema Designer" para dominios custom
 - [ ] Implementar 4 dominios base: Science, Humanities, Healthcare, Business
 
-### ⬜ Fase 8: Universal Entity Model
-- [ ] Diseñar y migrar `RawProduct` → `UniversalEntity`
+### ⬜ Fase 8: Universal Entity Model + **OLAP Engine** ← *Complementado por Data Cubes*
+- [ ] Diseñar y migrar `RawProduct` → `UniversalEntity` (con `attributes_json` flexible)
 - [ ] Migrar datos existentes de manera retrocompatible
 - [ ] Actualizar todos los endpoints y schemas Pydantic
+- [ ] **Implementar `olap_engine.py`** (DuckDB + Polars) — *Ver [UKIP_DATA_CUBES_INTEGRATION.md](UKIP_DATA_CUBES_INTEGRATION.md)*
+  - `build_cube()` — Materializa Star Schema desde UniversalEntity
+  - `query_cube()` — SQL OLAP con `CUBE` / `ROLLUP` / `GROUPING SETS`
+  - `export_pivot()` — Tablas pivoteadas para Excel
+  - `drill_down()` — Navegación jerárquica (País → Región → Institución)
+- [ ] Crear **OLAP Cube Explorer** en `app/analytics/olap/page.tsx` (frontend)
+- [ ] Añadir endpoints `/cube/query`, `/cube/dimensions`, `/cube/drill-down`, `/cube/export`
+- [ ] Integrar `cube_schema` en cada `domains/*.yaml`
+- [ ] Dependencias: `pip install duckdb polars xlsxwriter`
 
 ### ⬜ Fase 9: Analyzers Avanzados
 - [ ] `topic_modeling.py` — BERTopic sobre abstracts
 - [ ] `knowledge_gaps.py` — Análisis comparativo de corpus
 - [ ] `correlation.py` — Análisis multi-variable entre campos del catálogo
+- [ ] Integrar Topic Modeling como **dimensión automática en cubos OLAP**
 
 ### ⬜ Fase 10: Artifact Studio
 - [ ] `report_builder.py` — Reportes PDF/HTML generados desde análisis
-- [ ] `roi_calculator.py` — Modelos de ROI múltiple escenario
+- [ ] `roi_calculator.py` — Modelos de ROI múltiple escenario (ver Caso Consultoría en Data Cubes doc)
+- [ ] **Reportes que exportan directamente desde cubos OLAP** (Excel multi-hoja, JSON, Parquet)
 - [ ] Templates de artefactos por dominio (academia, empresa, salud)
 
 ### ⬜ Fase 11: Context Engineering Layer
@@ -302,10 +321,24 @@ UKIP Dashboard
 
 ---
 
-## 8. Historial de Actualizaciones
+## 8. Documentos Complementarios
+
+Este documento forma parte de un ecosistema de documentación viva:
+
+| Documento | Propósito | Relación |
+|---|---|---|
+| `EVOLUTION_STRATEGY.md` *(este)* | Visión global, pilares, roadmap maestro | Documento raíz |
+| [`SCIENTOMETRICS.md`](SCIENTOMETRICS.md) | Estrategia de enriquecimiento Fases 1–5 | Implementado ✅ |
+| [`UKIP_DATA_CUBES_INTEGRATION.md`](UKIP_DATA_CUBES_INTEGRATION.md) | Arquitectura OLAP con DuckDB, Star Schema, Drill-Down | Targeta Fase 8 |
+| `ARCHITECTURE.md` | Patrones de diseño y filosofía pragmática | Referencia transversal |
+
+---
+
+## 9. Historial de Actualizaciones
 
 | Fecha | Versión | Descripción del cambio |
 |---|---|---|
 | 2026-03-05 | v1.0 | Documento inicial — Plano estratégico de evolución UKIP |
+| 2026-03-05 | v1.1 | Integración de `UKIP_DATA_CUBES_INTEGRATION.md` — OLAP Engine con DuckDB añadido a Fase 8, estructura de carpetas actualizada, tabla de documentos complementarios |
 
 *Este documento se actualiza en cada sesión de trabajo donde se avance en la implementación de las fases estratégicas.*
