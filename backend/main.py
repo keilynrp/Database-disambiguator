@@ -1748,3 +1748,76 @@ def delete_ai_integration(integration_id: int, db: Session = Depends(get_db)):
     db.delete(integration)
     db.commit()
     return {"message": "Deleted"}
+
+
+# --- Phase 5: RAG Endpoints ---
+from backend.analytics import rag_engine
+from backend.analytics.vector_store import VectorStoreService
+from pydantic import BaseModel as PyBaseModel
+
+class RAGQueryPayload(PyBaseModel):
+    question: str
+    top_k: int = 5
+
+def _get_active_integration(db: Session):
+    return db.query(models.AIIntegration).filter(models.AIIntegration.is_active == True).first()
+
+@app.post("/rag/index")
+def rag_index_catalog(db: Session = Depends(get_db)):
+    """
+    Phase 5: Bulk index all enriched products into the ChromaDB Vector Store.
+    Only products with enrichment_status='completed' are indexed.
+    """
+    integration = _get_active_integration(db)
+    if not integration:
+        raise HTTPException(status_code=400, detail="No active AI provider. Configure one in Integrations → AI Language Models.")
+
+    products = db.query(models.RawProduct).filter(
+        models.RawProduct.enrichment_status == "completed"
+    ).all()
+
+    indexed = 0
+    skipped = 0
+    errors = 0
+
+    for product in products:
+        result = rag_engine.index_product(product, integration)
+        if result["status"] == "indexed":
+            indexed += 1
+        elif result["status"] == "skipped":
+            skipped += 1
+        else:
+            errors += 1
+
+    return {
+        "message": f"Indexing complete.",
+        "indexed": indexed,
+        "skipped": skipped,
+        "errors": errors,
+        "provider_used": integration.provider_name
+    }
+
+@app.post("/rag/query")
+def rag_query(payload: RAGQueryPayload, db: Session = Depends(get_db)):
+    """
+    Phase 5: Accepts a natural language question and returns a grounded, context-aware answer
+    using the active LLM provider and the ChromaDB vector store.
+    """
+    integration = _get_active_integration(db)
+    result = rag_engine.query_catalog(
+        user_question=payload.question,
+        integration_record=integration,
+        top_k=payload.top_k
+    )
+    return result
+
+@app.get("/rag/stats")
+def rag_stats():
+    """Returns ChromaDB index statistics."""
+    return VectorStoreService.get_stats()
+
+@app.delete("/rag/index")
+def rag_clear_index():
+    """Clears the entire vector index. Use with caution."""
+    VectorStoreService.clear_all()
+    return {"message": "Vector index cleared."}
