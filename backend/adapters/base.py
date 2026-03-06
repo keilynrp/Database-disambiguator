@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class RemoteProduct:
-    """Normalized product representation from any remote store."""
+class RemoteEntity:
+    """Normalized entity representation from any remote store."""
     remote_id: str
     name: str
     canonical_url: str
@@ -37,7 +37,7 @@ class ConnectionTestResult:
     success: bool
     message: str
     store_name: Optional[str] = None
-    product_count: Optional[int] = None
+    entity_count: Optional[int] = None
     api_version: Optional[str] = None
 
 
@@ -58,31 +58,33 @@ class BaseStoreAdapter(ABC):
         pass
 
     @abstractmethod
-    def fetch_products(self, page: int = 1, per_page: int = 50) -> List[RemoteProduct]:
-        """Fetch a page of products from the remote store."""
+    def fetch_entities(self, page: int = 1, per_page: int = 50) -> List[RemoteEntity]:
+        """Fetch a page of entities from the remote store."""
         pass
 
     @abstractmethod
-    def fetch_product_by_id(self, remote_id: str) -> Optional[RemoteProduct]:
-        """Fetch a single product by its remote ID."""
+    def fetch_entity_by_id(self, remote_id: str) -> Optional[RemoteEntity]:
+        """Fetch a single entity by its remote ID."""
         pass
 
     @abstractmethod
-    def fetch_product_count(self) -> int:
-        """Get total number of products in the store."""
+    def fetch_entity_count(self) -> int:
+        """Get total number of entities in the store."""
         pass
 
     @abstractmethod
-    def push_product_update(self, remote_id: str, updates: dict) -> bool:
-        """Push field updates to a remote product. Returns True on success."""
+    def push_entity_update(self, remote_id: str, updates: dict) -> bool:
+        """Push field updates to a remote entity. Returns True on success."""
         pass
 
-    def get_canonical_url(self, product_data: dict) -> str:
-        """Build canonical URL from product data. Override per platform if needed."""
-        permalink = product_data.get("permalink") or product_data.get("url") or ""
+    def get_canonical_url(self, entity_data: dict) -> str:
+        """Build canonical URL from entity data. Override per platform if needed."""
+        permalink = entity_data.get("permalink") or entity_data.get("url") or ""
         if permalink:
             return permalink
-        slug = product_data.get("slug") or product_data.get("handle") or ""
+        slug = entity_data.get("slug") or entity_data.get("handle") or ""
         if slug:
+            # We keep /product/ in the URL if the remote store uses it, 
+            # but we can generalize the documentation.
             return f"{self.base_url}/product/{slug}"
         return ""

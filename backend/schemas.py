@@ -1,19 +1,21 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from enum import Enum
 
-class ProductBase(BaseModel):
-    product_name: Optional[str] = None
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal, Optional, List
+
+class EntityBase(BaseModel):
+    entity_name: Optional[str] = None
     classification: Optional[str] = None
-    product_type: Optional[str] = None
+    entity_type: Optional[str] = None
     is_decimal_sellable: Optional[str] = None
     control_stock: Optional[str] = None
     status: Optional[str] = None
     taxes: Optional[str] = None
     variant: Optional[str] = None
-    product_code_universal_1: Optional[str] = None
-    product_code_universal_2: Optional[str] = None
-    product_code_universal_3: Optional[str] = None
-    product_code_universal_4: Optional[str] = None
+    entity_code_universal_1: Optional[str] = None
+    entity_code_universal_2: Optional[str] = None
+    entity_code_universal_3: Optional[str] = None
+    entity_code_universal_4: Optional[str] = None
     brand_lower: Optional[str] = None
     brand_capitalized: Optional[str] = None
     model: Optional[str] = None
@@ -22,7 +24,7 @@ class ProductBase(BaseModel):
     gtin_empty_reason_1: Optional[str] = None
     gtin_empty_reason_2: Optional[str] = None
     gtin_empty_reason_3: Optional[str] = None
-    gtin_product_reason: Optional[str] = None
+    gtin_entity_reason: Optional[str] = None
     gtin_reason_lower: Optional[str] = None
     gtin_empty_reason_typo: Optional[str] = None
     equipment: Optional[str] = None
@@ -34,7 +36,7 @@ class ProductBase(BaseModel):
     branches: Optional[str] = None
     creation_date: Optional[str] = None
     variant_status: Optional[str] = None
-    product_key: Optional[str] = None
+    entity_key: Optional[str] = None
     unit_of_measure: Optional[str] = None
     validation_status: Optional[str] = None
     
@@ -45,12 +47,11 @@ class ProductBase(BaseModel):
     enrichment_source: Optional[str] = None
     enrichment_status: str = "none"
 
-class Product(ProductBase):
+class Entity(EntityBase):
     id: int
     normalized_json: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RuleBase(BaseModel):
     field_name: str
@@ -61,8 +62,7 @@ class RuleBase(BaseModel):
 class Rule(RuleBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class BulkRuleCreate(BaseModel):
     field_name: str
@@ -86,8 +86,7 @@ class HarmonizationLogResponse(BaseModel):
     executed_at: Optional[str] = None
     reverted: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UndoRedoResponse(BaseModel):
@@ -100,28 +99,32 @@ class UndoRedoResponse(BaseModel):
 
 # ── Store Integration Schemas ─────────────────────────────────────────
 
+_Platform = Literal["woocommerce", "shopify", "bsale", "custom"]
+_SyncDirection = Literal["pull", "push", "bidirectional"]
+
+
 class StoreConnectionCreate(BaseModel):
-    name: str
-    platform: str                          # woocommerce | shopify | bsale | custom
-    base_url: str
+    name: str = Field(min_length=1, max_length=255)
+    platform: _Platform
+    base_url: str = Field(min_length=1, max_length=500)
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     access_token: Optional[str] = None
-    custom_headers: Optional[str] = None
-    sync_direction: str = "bidirectional"   # pull | push | bidirectional
+    custom_headers: Optional[str] = Field(default=None, max_length=5000)
+    sync_direction: _SyncDirection = "bidirectional"
     notes: Optional[str] = None
 
 
 class StoreConnectionUpdate(BaseModel):
-    name: Optional[str] = None
-    platform: Optional[str] = None
-    base_url: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    platform: Optional[_Platform] = None
+    base_url: Optional[str] = Field(default=None, min_length=1, max_length=500)
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     access_token: Optional[str] = None
-    custom_headers: Optional[str] = None
+    custom_headers: Optional[str] = Field(default=None, max_length=5000)
     is_active: Optional[bool] = None
-    sync_direction: Optional[str] = None
+    sync_direction: Optional[_SyncDirection] = None
     notes: Optional[str] = None
 
 
@@ -133,10 +136,48 @@ class StoreConnectionResponse(BaseModel):
     is_active: bool
     last_sync_at: Optional[str] = None
     created_at: Optional[str] = None
-    product_count: int = 0
+    entity_count: int = 0
     sync_direction: str = "bidirectional"
     notes: Optional[str] = None
     # Credentials are intentionally excluded from responses
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── RBAC: Users ───────────────────────────────────────────────────────────
+
+class UserRole(str, Enum):
+    super_admin = "super_admin"
+    admin       = "admin"
+    editor      = "editor"
+    viewer      = "viewer"
+
+
+class UserCreate(BaseModel):
+    username: str           = Field(min_length=3, max_length=50)
+    email:    Optional[str] = Field(default=None, max_length=255)
+    password: str           = Field(min_length=8, max_length=128)
+    role:     UserRole      = UserRole.viewer
+
+
+class UserUpdate(BaseModel):
+    email:     Optional[str]      = Field(default=None, max_length=255)
+    password:  Optional[str]      = Field(default=None, min_length=8, max_length=128)
+    role:      Optional[UserRole] = None
+    is_active: Optional[bool]     = None
+
+
+class UserResponse(BaseModel):
+    id:         int
+    username:   str
+    email:      Optional[str] = None
+    role:       str
+    is_active:  bool
+    created_at: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password:     str = Field(min_length=8, max_length=128)

@@ -2,10 +2,13 @@
 Shopify Admin REST API adapter.
 Docs: https://shopify.dev/docs/api/admin-rest
 """
+import logging
 import requests
 from typing import List, Optional
 
-from .base import BaseStoreAdapter, RemoteProduct, ConnectionTestResult
+from .base import BaseStoreAdapter, RemoteEntity, ConnectionTestResult
+
+logger = logging.getLogger(__name__)
 
 
 class ShopifyAdapter(BaseStoreAdapter):
@@ -48,87 +51,89 @@ class ShopifyAdapter(BaseStoreAdapter):
                 success=True,
                 message="Connected successfully to Shopify",
                 store_name=shop.get("name", self.base_url),
-                product_count=None,
+                entity_count=None,
                 api_version=f"Shopify {self.api_version}",
             )
         except Exception as e:
             return ConnectionTestResult(success=False, message=str(e))
 
-    def _parse_product(self, p: dict) -> RemoteProduct:
-        images = [img.get("src", "") for img in p.get("images", []) if img.get("src")]
-        tags = [t.strip() for t in (p.get("tags", "") or "").split(",") if t.strip()]
+    def _parse_entity(self, item: dict) -> RemoteEntity:
+        images = [img.get("src", "") for img in item.get("images", []) if img.get("src")]
+        tags = [t.strip() for t in (item.get("tags", "") or "").split(",") if t.strip()]
 
         # Get first variant data
-        first_variant = p.get("variants", [{}])[0] if p.get("variants") else {}
+        first_variant = item.get("variants", [{}])[0] if item.get("variants") else {}
         variants = [{
             "id": str(v.get("id", "")),
             "sku": v.get("sku", ""),
             "price": v.get("price", ""),
             "stock": str(v.get("inventory_quantity", "")),
             "title": v.get("title", ""),
-        } for v in p.get("variants", [])]
+        } for v in item.get("variants", [])]
 
-        handle = p.get("handle", "")
+        handle = item.get("handle", "")
         canonical = f"{self.base_url}/products/{handle}" if handle else ""
 
-        return RemoteProduct(
-            remote_id=str(p["id"]),
-            name=p.get("title", ""),
+        return RemoteEntity(
+            remote_id=str(item["id"]),
+            name=item.get("title", ""),
             canonical_url=canonical,
             sku=first_variant.get("sku", ""),
             barcode=first_variant.get("barcode", ""),
             price=first_variant.get("price", ""),
             compare_at_price=first_variant.get("compare_at_price", ""),
             stock=str(first_variant.get("inventory_quantity", "")) if first_variant.get("inventory_quantity") is not None else None,
-            status=p.get("status", ""),
-            description=p.get("body_html", ""),
+            status=item.get("status", ""),
+            description=item.get("body_html", ""),
             short_description=None,
-            brand=p.get("vendor", ""),
-            category=p.get("product_type", ""),
+            brand=item.get("vendor", ""),
+            category=item.get("entity_type", ""),
             tags=tags,
             images=images,
             weight=str(first_variant.get("weight", "")),
             dimensions=None,
             variants=variants,
-            raw_data=p,
+            raw_data=item,
         )
 
-    def fetch_products(self, page: int = 1, per_page: int = 50) -> List[RemoteProduct]:
-        # Shopify uses cursor-based pagination; for simplicity we use limit+page
+    def fetch_entities(self, page: int = 1, per_page: int = 50) -> List[RemoteEntity]:
+        # Shopify uses cursor-based pagination; for simplicity we use limit
         resp = self._request("GET", "products.json", params={"limit": per_page})
         data = resp.json()
-        products = data.get("products", [])
-        return [self._parse_product(p) for p in products]
+        items = data.get("products", [])
+        return [self._parse_entity(item) for item in items]
 
-    def fetch_product_by_id(self, remote_id: str) -> Optional[RemoteProduct]:
+    def fetch_entity_by_id(self, remote_id: str) -> Optional[RemoteEntity]:
         try:
             resp = self._request("GET", f"products/{remote_id}.json")
             data = resp.json()
-            return self._parse_product(data.get("product", {}))
-        except Exception:
+            return self._parse_entity(data.get("product", {}))
+        except Exception as exc:
+            logger.warning("Shopify fetch_entity_by_id(%s) failed: %s", remote_id, exc)
             return None
 
-    def fetch_product_count(self) -> int:
+    def fetch_entity_count(self) -> int:
         try:
             resp = self._request("GET", "products/count.json")
             return resp.json().get("count", 0)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Shopify fetch_entity_count failed: %s", exc)
             return 0
 
-    def push_product_update(self, remote_id: str, updates: dict) -> bool:
-        shopify_product: dict = {}
+    def push_entity_update(self, remote_id: str, updates: dict) -> bool:
+        remote_payload: dict = {}
         if "name" in updates:
-            shopify_product["title"] = updates["name"]
+            remote_payload["title"] = updates["name"]
         if "description" in updates:
-            shopify_product["body_html"] = updates["description"]
+            remote_payload["body_html"] = updates["description"]
         if "status" in updates:
-            shopify_product["status"] = updates["status"]
+            remote_payload["status"] = updates["status"]
         if "brand" in updates:
-            shopify_product["vendor"] = updates["brand"]
+            remote_payload["vendor"] = updates["brand"]
         if "category" in updates:
-            shopify_product["product_type"] = updates["category"]
+            remote_payload["entity_type"] = updates["category"]
         if "tags" in updates:
-            shopify_product["tags"] = ", ".join(updates["tags"]) if isinstance(updates["tags"], list) else updates["tags"]
+            remote_payload["tags"] = ", ".join(updates["tags"]) if isinstance(updates["tags"], list) else updates["tags"]
 
         # Variant-level updates
         variant_updates: dict = {}
@@ -140,8 +145,8 @@ class ShopifyAdapter(BaseStoreAdapter):
             variant_updates["barcode"] = updates["barcode"]
 
         try:
-            if shopify_product:
-                self._request("PUT", f"products/{remote_id}.json", json_data={"product": shopify_product})
+            if remote_payload:
+                self._request("PUT", f"products/{remote_id}.json", json_data={"product": remote_payload})
             if variant_updates:
                 # Get first variant ID
                 product_resp = self._request("GET", f"products/{remote_id}.json")
@@ -151,5 +156,6 @@ class ShopifyAdapter(BaseStoreAdapter):
                 if variant_id:
                     self._request("PUT", f"variants/{variant_id}.json", json_data={"variant": variant_updates})
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Shopify push_entity_update(%s) failed: %s", remote_id, exc)
             return False

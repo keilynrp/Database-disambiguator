@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api";
 
 interface Classification {
     name: string;
@@ -16,7 +17,7 @@ export default function ClassificationsPage() {
     useEffect(() => {
         async function fetchClassifications() {
             try {
-                const res = await fetch("http://localhost:8000/classifications");
+                const res = await apiFetch("/classifications");
                 if (!res.ok) throw new Error("Failed to fetch classifications");
                 const data = await res.json();
                 setClassifications(data);

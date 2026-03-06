@@ -1,29 +1,31 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from .database import Base
 
-class RawProduct(Base):
-    __tablename__ = "raw_products"
+class RawEntity(Base):
+    __tablename__ = "raw_entities"
 
     id = Column(Integer, primary_key=True, index=True)
     
     # Original Columns normalized to snake_case
-    product_name = Column(String, index=True) # Nombre del Producto
+    entity_name = Column(String, index=True) # Nombre del Producto
     classification = Column(String) # Clasificación
-    product_type = Column(String) # Tipo de Producto
+    entity_type = Column(String) # Tipo de Producto
     is_decimal_sellable = Column(String) # ¿Posible vender en cantidad decimal?
     control_stock = Column(String) # ¿Controlarás el stock del producto?
-    status = Column(String) # Estado
+    status = Column(String, index=True) # Estado
     taxes = Column(String) # Impuestos
     variant = Column(String) # Variante
     
     # Messy ID definitions
-    product_code_universal_1 = Column(String) # Código universal de producto
-    product_code_universal_2 = Column(String) # Codigo universal
-    product_code_universal_3 = Column(String) # Codigo universal del producto
-    product_code_universal_4 = Column(String) # CODIGO UNIVERSAL DEL PRODRUCTO 
+    entity_code_universal_1 = Column(String) # Código universal de producto
+    entity_code_universal_2 = Column(String) # Codigo universal
+    entity_code_universal_3 = Column(String) # Codigo universal del producto
+    entity_code_universal_4 = Column(String) # CODIGO UNIVERSAL DEL PRODRUCTO 
     
     brand_lower = Column(String) # marca
-    brand_capitalized = Column(String) # Marca
+    brand_capitalized = Column(String, index=True) # Marca
     
     model = Column(String) # modelo
     
@@ -33,7 +35,7 @@ class RawProduct(Base):
     gtin_empty_reason_1 = Column(String) # Motivo de GTIN vacío
     gtin_empty_reason_2 = Column(String) # Motivo GTIN vacío 
     gtin_empty_reason_3 = Column(String) # Motivo GTIN vacia
-    gtin_product_reason = Column(String) # Motivo GTIN de producto
+    gtin_entity_reason = Column(String) # Motivo GTIN de producto
     gtin_reason_lower = Column(String) # motivo GTIN
     gtin_empty_reason_typo = Column(String) # Mtivo GTIN vacio
     
@@ -43,16 +45,16 @@ class RawProduct(Base):
     
     allow_sales_without_stock = Column(String) # ¿permitirás ventas sin stock?
     barcode = Column(String) # Código de Barras
-    sku = Column(String) # SKU
+    sku = Column(String, index=True) # SKU
     branches = Column(String) # Sucursales
     
     creation_date = Column(String) # Fecha de creacion
     variant_status = Column(String) # Estado Variante
-    product_key = Column(String) # Clave de producto
+    entity_key = Column(String) # Clave de producto
     unit_of_measure = Column(String) # Unidad de medida
     
     # Metadata
-    validation_status = Column(String, default="pending") # pending, valid, invalid
+    validation_status = Column(String, default="pending", index=True) # pending, valid, invalid
     normalized_json = Column(Text, nullable=True) # Store clean version here
 
     # Scientometric Enrichment Fields
@@ -60,7 +62,7 @@ class RawProduct(Base):
     enrichment_citation_count = Column(Integer, default=0)
     enrichment_concepts = Column(Text, nullable=True) # Stored as comma-separated
     enrichment_source = Column(String, nullable=True)
-    enrichment_status = Column(String, default="none") # none, pending, completed, failed
+    enrichment_status = Column(String, default="none", index=True) # none, pending, completed, failed
 
 class NormalizationRule(Base):
     __tablename__ = "normalization_rules"
@@ -110,7 +112,7 @@ class StoreConnection(Base):
     is_active = Column(Boolean, default=True)
     last_sync_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime)
-    product_count = Column(Integer, default=0)            # Cached count of mapped products
+    entity_count = Column(Integer, default=0)            # Cached count of mapped products
     sync_direction = Column(String, default="bidirectional")  # pull | push | bidirectional
     notes = Column(Text, nullable=True)
 
@@ -120,8 +122,8 @@ class StoreSyncMapping(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     store_id = Column(Integer, index=True)               # FK to store_connections.id
-    local_product_id = Column(Integer, index=True)       # FK to raw_products.id
-    remote_product_id = Column(String, nullable=True)    # ID in the remote store
+    local_entity_id = Column(Integer, index=True)       # FK to raw_entities.id
+    remote_entity_id = Column(String, nullable=True)    # ID in the remote store
     canonical_url = Column(String, index=True)            # The canonical URL used for mapping
     remote_sku = Column(String, nullable=True)
     remote_name = Column(String, nullable=True)
@@ -153,7 +155,7 @@ class SyncQueueItem(Base):
     store_id = Column(Integer, index=True)               # FK to store_connections.id
     mapping_id = Column(Integer, nullable=True, index=True)  # FK to store_sync_mappings.id
     direction = Column(String)                            # pull | push
-    product_name = Column(String, nullable=True)          # For display convenience
+    entity_name = Column(String, nullable=True)          # For display convenience
     canonical_url = Column(String, nullable=True)
     field = Column(String)                                # Which field changed
     local_value = Column(Text, nullable=True)
@@ -176,3 +178,23 @@ class AIIntegration(Base):
     model_name = Column(String, nullable=True)               # e.g., gpt-4o, claude-3.5-sonnet, r1, llama3
     is_active = Column(Boolean, default=False)               # which provider is the active one?
     created_at = Column(DateTime)
+
+
+# ── RBAC: Users ────────────────────────────────────────────────────────────
+
+class User(Base):
+    """
+    Platform user with a fixed role (super_admin | admin | editor | viewer).
+    Credentials are stored in this table; no more env-var-only auth.
+    """
+    __tablename__ = "users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    username        = Column(String(50), unique=True, index=True, nullable=False)
+    email           = Column(String(255), unique=True, index=True, nullable=True)
+    password_hash   = Column(String, nullable=False)
+    role            = Column(String, nullable=False, default="viewer")
+    is_active       = Column(Boolean, default=True)
+    created_at      = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
+    failed_attempts = Column(Integer, default=0)
+    locked_until    = Column(String, nullable=True)  # ISO datetime string; None = not locked

@@ -28,15 +28,20 @@ interface GroupState {
     saved: boolean;
 }
 
-const fieldLabels: Record<string, string> = {
-    brand_capitalized: "Brand",
-    product_name: "Product Name",
-    model: "Model",
-    product_type: "Product Type",
-};
+import { useDomain } from "../contexts/DomainContext";
+import { apiFetch } from "@/lib/api";
 
 export default function AuthorityPage() {
-    const [field, setField] = useState("brand_capitalized");
+    const { activeDomain } = useDomain();
+    const [field, setField] = useState("");
+
+    // Auto-select first string field
+    useEffect(() => {
+        if (activeDomain && !field) {
+            const firstStr = activeDomain.attributes.find(a => a.type === "string");
+            if (firstStr) setField(firstStr.name);
+        }
+    }, [activeDomain, field]);
     const [data, setData] = useState<AuthorityResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [applying, setApplying] = useState(false);
@@ -59,7 +64,7 @@ export default function AuthorityPage() {
         setGroupStates({});
         setApplyResult(null);
         try {
-            const res = await fetch(`http://localhost:8000/authority/${field}`);
+            const res = await apiFetch(`/authority/${field}`);
             if (!res.ok) throw new Error("Failed to fetch");
             const json: AuthorityResponse = await res.json();
             setData(json);
@@ -109,7 +114,7 @@ export default function AuthorityPage() {
 
         setSavingGroup(idx);
         try {
-            const res = await fetch("http://localhost:8000/rules/bulk", {
+            const res = await apiFetch("/rules/bulk", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -135,7 +140,7 @@ export default function AuthorityPage() {
         setApplying(true);
         setApplyResult(null);
         try {
-            const res = await fetch(`http://localhost:8000/rules/apply?field_name=${field}`, {
+            const res = await apiFetch(`/rules/apply?field_name=${field}`, {
                 method: "POST",
             });
             if (!res.ok) throw new Error("Failed to apply rules");
@@ -165,9 +170,15 @@ export default function AuthorityPage() {
                             onChange={(e) => setField(e.target.value)}
                             className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                         >
-                            {Object.entries(fieldLabels).map(([val, label]) => (
-                                <option key={val} value={val}>{label}</option>
-                            ))}
+                            {activeDomain ? (
+                                activeDomain.attributes
+                                    .filter(a => a.type === 'string')
+                                    .map(attr => (
+                                        <option key={attr.name} value={attr.name}>{attr.label}</option>
+                                    ))
+                            ) : (
+                                <option value="">Loading attributes...</option>
+                            )}
                         </select>
                     </div>
                     <button

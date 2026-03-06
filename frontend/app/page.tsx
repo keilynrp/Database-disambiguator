@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import ProductTable from "./components/ProductTable";
-import ProductVariantView from "./components/ProductVariantView";
+import EntityTable from "./components/EntityTable";
+import EntityVariantView from "./components/EntityVariantView";
 import { useSidebar } from "./components/SidebarProvider";
 
 export default function Home() {
@@ -15,10 +15,10 @@ export default function Home() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold text-zinc-900 dark:text-white">
-              Database Disambiguator
+              Universal Data Hub
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Product catalog and harmonization tools
+              Centralized entity management and harmonization tools
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -49,7 +49,7 @@ export default function Home() {
           </div>
         </div>
 
-        {viewMode === "table" ? <ProductTable /> : <ProductVariantView />}
+        {viewMode === "table" ? <EntityTable /> : <EntityVariantView />}
       </div>
     </main>
   );

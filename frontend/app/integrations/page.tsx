@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import AIIntegrations from "./AIIntegrations";
+import { apiFetch } from "@/lib/api";
 
 interface StoreConnection {
     id: number;
@@ -12,7 +13,7 @@ interface StoreConnection {
     is_active: boolean;
     last_sync_at: string | null;
     created_at: string | null;
-    product_count: number;
+    entity_count: number;
     sync_direction: string;
     notes: string | null;
 }
@@ -52,7 +53,7 @@ export default function IntegrationsPage() {
 
     async function fetchStores() {
         try {
-            const res = await fetch("http://localhost:8000/stores");
+            const res = await apiFetch("/stores");
             if (!res.ok) throw new Error("Failed");
             const data = await res.json();
             setStores(data);
@@ -99,14 +100,11 @@ export default function IntegrationsPage() {
                 if (!payload.access_token) delete payload.access_token;
             }
 
-            const url = editingStore
-                ? `http://localhost:8000/stores/${editingStore.id}`
-                : "http://localhost:8000/stores";
+            const path = editingStore ? `/stores/${editingStore.id}` : "/stores";
             const method = editingStore ? "PUT" : "POST";
 
-            const res = await fetch(url, {
+            const res = await apiFetch(path, {
                 method,
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
             });
 
@@ -128,7 +126,7 @@ export default function IntegrationsPage() {
     async function handleDelete(store: StoreConnection) {
         if (!confirm(`Delete "${store.name}" and all its sync data?`)) return;
         try {
-            await fetch(`http://localhost:8000/stores/${store.id}`, { method: "DELETE" });
+            await apiFetch(`/stores/${store.id}`, { method: "DELETE" });
             fetchStores();
         } catch (error) {
             console.error("Error deleting store:", error);
@@ -137,7 +135,7 @@ export default function IntegrationsPage() {
 
     async function handleToggle(store: StoreConnection) {
         try {
-            await fetch(`http://localhost:8000/stores/${store.id}/toggle`, { method: "POST" });
+            await apiFetch(`/stores/${store.id}/toggle`, { method: "POST" });
             fetchStores();
         } catch (error) {
             console.error("Error toggling store:", error);
@@ -401,7 +399,7 @@ export default function IntegrationsPage() {
                                                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                                                 </svg>
-                                                <span>{store.product_count.toLocaleString()} mapped products</span>
+                                                <span>{store.entity_count.toLocaleString()} mapped products</span>
                                             </div>
                                             {store.notes && (
                                                 <div className="flex items-start gap-2 text-gray-400 dark:text-gray-500">

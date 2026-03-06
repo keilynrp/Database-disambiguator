@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api";
 
 const PLATFORM_META: Record<string, { label: string; color: string; bgColor: string }> = {
     woocommerce: { label: "WooCommerce", color: "text-purple-700 dark:text-purple-400", bgColor: "bg-purple-50 dark:bg-purple-500/10" },
@@ -13,20 +14,20 @@ const PLATFORM_META: Record<string, { label: string; color: string; bgColor: str
 
 interface StoreDetail {
     id: number; name: string; platform: string; base_url: string; is_active: boolean;
-    last_sync_at: string | null; created_at: string | null; product_count: number;
+    last_sync_at: string | null; created_at: string | null; entity_count: number;
     sync_direction: string; notes: string | null;
     has_api_key: boolean; has_api_secret: boolean; has_access_token: boolean;
 }
 
 interface Mapping {
-    id: number; local_product_id: number | null; remote_product_id: string | null;
+    id: number; local_entity_id: number | null; remote_entity_id: string | null;
     canonical_url: string; remote_sku: string | null; remote_name: string | null;
     remote_price: string | null; remote_stock: string | null; remote_status: string | null;
     sync_status: string; last_synced_at: string | null;
 }
 
 interface QueueItem {
-    id: number; mapping_id: number | null; direction: string; product_name: string | null;
+    id: number; mapping_id: number | null; direction: string; entity_name: string | null;
     canonical_url: string | null; field: string; local_value: string | null;
     remote_value: string | null; status: string; created_at: string | null; resolved_at: string | null;
 }
@@ -66,7 +67,7 @@ export default function StoreDetailPage() {
 
     const fetchStore = useCallback(async () => {
         try {
-            const res = await fetch(`http://localhost:8000/stores/${storeId}`);
+            const res = await apiFetch(`/stores/${storeId}`);
             if (!res.ok) throw new Error("Not found");
             setStore(await res.json());
         } catch { setStore(null); }
@@ -74,17 +75,17 @@ export default function StoreDetailPage() {
     }, [storeId]);
 
     const fetchQueue = useCallback(async () => {
-        const res = await fetch(`http://localhost:8000/stores/${storeId}/queue?status=${queueFilter}&limit=50`);
+        const res = await apiFetch(`/stores/${storeId}/queue?status=${queueFilter}&limit=50`);
         if (res.ok) { const data = await res.json(); setQueue(data.items); setQueueTotal(data.total); }
     }, [storeId, queueFilter]);
 
     const fetchMappings = useCallback(async () => {
-        const res = await fetch(`http://localhost:8000/stores/${storeId}/mappings?limit=50`);
+        const res = await apiFetch(`/stores/${storeId}/mappings?limit=50`);
         if (res.ok) { const data = await res.json(); setMappings(data.mappings); setMappingsTotal(data.total); }
     }, [storeId]);
 
     const fetchLogs = useCallback(async () => {
-        const res = await fetch(`http://localhost:8000/stores/${storeId}/logs?limit=30`);
+        const res = await apiFetch(`/stores/${storeId}/logs?limit=30`);
         if (res.ok) setLogs(await res.json());
     }, [storeId]);
 
@@ -96,7 +97,7 @@ export default function StoreDetailPage() {
     async function handleTest() {
         setTesting(true); setTestResult(null);
         try {
-            const res = await fetch(`http://localhost:8000/stores/${storeId}/test`, { method: "POST" });
+            const res = await apiFetch(`/stores/${storeId}/test`, { method: "POST" });
             setTestResult(await res.json());
         } catch (e) { setTestResult({ success: false, message: String(e) }); }
         finally { setTesting(false); }
@@ -105,7 +106,7 @@ export default function StoreDetailPage() {
     async function handlePull() {
         setPulling(true); setPullResult(null);
         try {
-            const res = await fetch(`http://localhost:8000/stores/${storeId}/pull`, { method: "POST" });
+            const res = await apiFetch(`/stores/${storeId}/pull`, { method: "POST" });
             if (!res.ok) { const err = await res.json(); setPullResult({ message: err.detail || "Error", new_mappings: 0, new_queue_items: 0 }); return; }
             const data = await res.json();
             setPullResult(data);
@@ -115,13 +116,13 @@ export default function StoreDetailPage() {
     }
 
     async function handleQueueAction(itemId: number, action: "approve" | "reject") {
-        await fetch(`http://localhost:8000/stores/queue/${itemId}/${action}`, { method: "POST" });
+        await apiFetch(`/stores/queue/${itemId}/${action}`, { method: "POST" });
         fetchQueue();
     }
 
     async function handleBulkAction(action: "bulk-approve" | "bulk-reject") {
         if (!confirm(`${action === "bulk-approve" ? "Approve" : "Reject"} all pending items?`)) return;
-        await fetch(`http://localhost:8000/stores/queue/${action}?store_id=${storeId}`, { method: "POST" });
+        await apiFetch(`/stores/queue/${action}?store_id=${storeId}`, { method: "POST" });
         fetchQueue();
     }
 
@@ -220,7 +221,7 @@ export default function StoreDetailPage() {
             {/* Stat cards */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 {[
-                    { label: "Mapped Products", value: store.product_count || mappingsTotal, icon: "📦" },
+                    { label: "Mapped Products", value: store.entity_count || mappingsTotal, icon: "📦" },
                     { label: "Pending Review", value: queueFilter === "pending" ? queueTotal : "...", icon: "⏳" },
                     { label: "Sync Direction", value: store.sync_direction === "bidirectional" ? "↔ Both" : store.sync_direction === "pull" ? "← Pull" : "Push →", icon: "🔄" },
                     { label: "Last Sync", value: store.last_sync_at ? new Date(store.last_sync_at).toLocaleDateString() : "Never", icon: "🕐" },
@@ -286,7 +287,7 @@ export default function StoreDetailPage() {
                                     {queue.map((item) => (
                                         <tr key={item.id} className="bg-white transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/50">
                                             <td className="px-4 py-3">
-                                                <p className="font-medium text-gray-900 dark:text-white truncate max-w-[200px]">{item.product_name || "—"}</p>
+                                                <p className="font-medium text-gray-900 dark:text-white truncate max-w-[200px]">{item.entity_name || "—"}</p>
                                                 <p className="text-xs text-gray-400 truncate max-w-[200px]">{item.canonical_url}</p>
                                             </td>
                                             <td className="px-4 py-3">
@@ -337,7 +338,7 @@ export default function StoreDetailPage() {
                                         <tr key={m.id} className="bg-white transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/50">
                                             <td className="px-4 py-3">
                                                 <p className="font-medium text-gray-900 dark:text-white truncate max-w-[200px]">{m.remote_name || "—"}</p>
-                                                <p className="text-xs text-gray-400">ID: {m.remote_product_id}</p>
+                                                <p className="text-xs text-gray-400">ID: {m.remote_entity_id}</p>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <a href={m.canonical_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs truncate block max-w-[200px] dark:text-blue-400">{m.canonical_url}</a>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 
 interface AIIntegration {
     id: number;
@@ -37,7 +38,7 @@ export default function AIIntegrations() {
 
     async function fetchIntegrations() {
         try {
-            const res = await fetch("http://localhost:8000/ai-integrations");
+            const res = await apiFetch("/ai-integrations");
             if (res.ok) setIntegrations(await res.json());
         } catch (error) {
             console.error(error);
@@ -72,12 +73,11 @@ export default function AIIntegrations() {
             const payload: any = { ...formData };
             if (editingId && !payload.api_key) delete payload.api_key; // Keep old key if empty
 
-            const url = editingId ? `http://localhost:8000/ai-integrations/${editingId}` : "http://localhost:8000/ai-integrations";
+            const path = editingId ? `/ai-integrations/${editingId}` : "/ai-integrations";
             const method = editingId ? "PUT" : "POST";
 
-            const res = await fetch(url, {
+            const res = await apiFetch(path, {
                 method,
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 
@@ -98,7 +98,7 @@ export default function AIIntegrations() {
 
     async function handleActivate(id: number) {
         try {
-            await fetch(`http://localhost:8000/ai-integrations/${id}/activate`, { method: "POST" });
+            await apiFetch(`/ai-integrations/${id}/activate`, { method: "POST" });
             fetchIntegrations();
         } catch (error) {
             console.error("Error activating:", error);
@@ -108,7 +108,7 @@ export default function AIIntegrations() {
     async function handleDelete(id: number) {
         if (!confirm("Are you sure you want to delete this RAG Integration?")) return;
         try {
-            await fetch(`http://localhost:8000/ai-integrations/${id}`, { method: "DELETE" });
+            await apiFetch(`/ai-integrations/${id}`, { method: "DELETE" });
             fetchIntegrations();
         } catch (error) {
             console.error("Error deleting:", error);

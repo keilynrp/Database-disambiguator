@@ -1,0 +1,27 @@
+id: healthcare
+name: Healthcare & Clinical
+description: "Clinical trials, medical devices, and patient datasets"
+primary_entity: "Clinical Entity"
+icon: "Activity"
+attributes:
+  - name: title
+    type: string
+    required: true
+    label: "Condition / Device / Drug"
+    is_core: false
+  - name: category
+    type: string
+    label: "Category"
+    is_core: false
+  - name: nct_id
+    type: string
+    label: "ClinicalTrials.gov ID"
+    is_core: false
+  - name: phase
+    type: string
+    label: "Trial Phase"
+    is_core: false
+  - name: status
+    type: string
+    label: "Status"
+    is_core: true

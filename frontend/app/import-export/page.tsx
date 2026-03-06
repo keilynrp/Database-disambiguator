@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import DataSourceSchemaAnalyzer from "../components/DataSourceSchemaAnalyzer";
+import { useDomain } from "../contexts/DomainContext";
+import { apiFetch } from "@/lib/api";
 
 interface UploadResult {
     message: string;
@@ -16,6 +18,7 @@ interface PurgeResult {
 }
 
 export default function ImportExportPage() {
+    const { activeDomain } = useDomain();
     const [dragOver, setDragOver] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -32,10 +35,10 @@ export default function ImportExportPage() {
     useEffect(() => {
         async function fetchCount() {
             try {
-                const res = await fetch("http://localhost:8000/stats");
+                const res = await apiFetch("/stats");
                 if (res.ok) {
                     const data = await res.json();
-                    setTotalProducts(data.total_products);
+                    setTotalProducts(data.total_entities ?? data.total_products ?? null);
                 }
             } catch {
                 // silently fail
@@ -45,9 +48,10 @@ export default function ImportExportPage() {
     }, [uploadResult, purgeResult]);
 
     async function handleUpload(file: File) {
-        const isAllowed = file.name.endsWith(".xlsx") || file.name.endsWith(".csv");
+        const allowed = [".xlsx", ".csv", ".json", ".xml", ".parquet", ".jsonld", ".rdf", ".ttl"];
+        const isAllowed = allowed.some(ext => file.name.toLowerCase().endsWith(ext));
         if (!isAllowed) {
-            setUploadError("Only .xlsx and .csv files are supported.");
+            setUploadError(`Only supported formats (${allowed.join(", ")}) are allowed.`);
             return;
         }
 
@@ -59,7 +63,7 @@ export default function ImportExportPage() {
             const formData = new FormData();
             formData.append("file", file);
 
-            const res = await fetch("http://localhost:8000/upload", {
+            const res = await apiFetch("/upload", {
                 method: "POST",
                 body: formData,
             });
@@ -95,7 +99,7 @@ export default function ImportExportPage() {
         setExporting(true);
         try {
             const params = exportSearch ? `?search=${encodeURIComponent(exportSearch)}` : "";
-            const res = await fetch(`http://localhost:8000/export${params}`);
+            const res = await apiFetch(`/export${params}`);
             if (!res.ok) throw new Error("Export failed");
 
             const blob = await res.blob();
@@ -119,7 +123,7 @@ export default function ImportExportPage() {
         setPurgeResult(null);
         try {
             const params = purgeRules ? "?include_rules=true" : "";
-            const res = await fetch(`http://localhost:8000/products/all${params}`, {
+            const res = await apiFetch(`/entities/all${params}`, {
                 method: "DELETE",
             });
             if (!res.ok) throw new Error("Purge failed");
@@ -147,7 +151,7 @@ export default function ImportExportPage() {
                         </div>
                         <div>
                             <h3 className="text-base font-semibold text-gray-900 dark:text-white">Import Data</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Upload an Excel (.xlsx) or CSV file with the original format</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Upload Excel, CSV, JSON, XML, Parquet, or RDF files</p>
                         </div>
                     </div>
 
@@ -165,7 +169,7 @@ export default function ImportExportPage() {
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".xlsx,.csv"
+                            accept=".xlsx,.csv,.json,.xml,.parquet,.jsonld,.rdf,.ttl"
                             onChange={handleFileSelect}
                             className="hidden"
                         />
@@ -183,9 +187,9 @@ export default function ImportExportPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                 </svg>
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Drop your .xlsx file here or <span className="text-blue-600 dark:text-blue-400">browse</span>
+                                    Drop your file here or <span className="text-blue-600 dark:text-blue-400">browse</span>
                                 </p>
-                                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Only Excel files (.xlsx) with the original column format</p>
+                                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Supported formats: Excel, CSV, JSON, XML, Parquet, RDF</p>
                             </>
                         )}
                     </div>
@@ -262,7 +266,7 @@ export default function ImportExportPage() {
                             <div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Total records available</p>
                                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                    {totalProducts !== null ? totalProducts.toLocaleString() : "—"}
+                                    {totalProducts != null ? totalProducts.toLocaleString() : "—"}
                                 </p>
                             </div>
                             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-500/10">
@@ -284,7 +288,7 @@ export default function ImportExportPage() {
                             </svg>
                             <input
                                 type="text"
-                                placeholder="Search by product, brand, model, SKU..."
+                                placeholder="Search dataset by attribute keywords..."
                                 value={exportSearch}
                                 onChange={(e) => setExportSearch(e.target.value)}
                                 className="h-10 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-700 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500"
@@ -426,32 +430,24 @@ export default function ImportExportPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {[
-                                ["Nombre del Producto", "product_name"],
-                                ["Clasificación", "classification"],
-                                ["Tipo de Producto", "product_type"],
-                                ["Marca", "brand_capitalized"],
-                                ["marca", "brand_lower"],
-                                ["modelo", "model"],
-                                ["SKU", "sku"],
-                                ["Código de Barras", "barcode"],
-                                ["GTIN", "gtin"],
-                                ["Estado", "status"],
-                                ["Variante", "variant"],
-                                ["Estado Variante", "variant_status"],
-                                ["Impuestos", "taxes"],
-                                ["Sucursales", "branches"],
-                                ["Fecha de creacion", "creation_date"],
-                                ["Clave de producto", "product_key"],
-                                ["Unidad de medida", "unit_of_measure"],
-                            ].map(([excel, db]) => (
-                                <tr key={db} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                    <td className="px-5 py-2.5 font-medium text-gray-900 dark:text-white">{excel}</td>
-                                    <td className="px-5 py-2.5">
-                                        <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">{db}</code>
+                            {activeDomain ? (
+                                activeDomain.attributes.map((attr) => (
+                                    <tr key={attr.name} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                        <td className="px-5 py-2.5 font-medium text-gray-900 dark:text-white">{attr.label}</td>
+                                        <td className="px-5 py-2.5">
+                                            <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-blue-600 dark:bg-gray-800 dark:text-blue-400">
+                                                {attr.name}
+                                            </code>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={2} className="px-5 py-4 text-center text-sm text-gray-500">
+                                        Loading domain schema...
                                     </td>
                                 </tr>
-                            ))}
+                            )}
                         </tbody>
                     </table>
                 </div>

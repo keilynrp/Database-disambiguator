@@ -12,7 +12,7 @@ export default function Sidebar() {
 
   const navItems = [
     {
-      label: "Analytics",
+      label: "Intelligence Dashboard",
       href: "/analytics",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -22,7 +22,7 @@ export default function Sidebar() {
       translationKey: 'nav.analytics'
     },
     {
-      label: "Product Catalog",
+      label: "Knowledge Explorer",
       href: "/",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -62,7 +62,7 @@ export default function Sidebar() {
       translationKey: 'nav.harmonization'
     },
     {
-      label: "Import / Export",
+      label: "Entity Sync",
       href: "/import-export",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -73,7 +73,7 @@ export default function Sidebar() {
       translationKey: 'nav.import_export'
     },
     {
-      label: "Semantic RAG",
+      label: "Semantic AI",
       href: "/rag",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,7 +84,7 @@ export default function Sidebar() {
       translationKey: 'nav.rag'
     },
     {
-      label: "Integrations",
+      label: "Connectors",
       href: "/integrations",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,7 +176,7 @@ export default function Sidebar() {
         {!collapsed && (
           <div className="rounded-lg bg-gray-50 px-3 py-3 dark:bg-gray-800">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Database Disambiguator v1.0
+              UKIP Data Hub v3.0
             </p>
           </div>
         )}

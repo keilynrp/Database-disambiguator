@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { apiFetch } from "@/lib/api";
 
 interface AnalyzeResult {
     filename: string;
@@ -25,7 +26,7 @@ export default function DataSourceSchemaAnalyzer() {
             const formData = new FormData();
             formData.append("file", file);
 
-            const res = await fetch("http://localhost:8000/analyze", {
+            const res = await apiFetch("/analyze", {
                 method: "POST",
                 body: formData,
             });

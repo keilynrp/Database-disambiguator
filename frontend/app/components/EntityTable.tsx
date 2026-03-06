@@ -2,24 +2,27 @@
 
 import { useState, useEffect, useCallback } from "react";
 import MonteCarloChart from "./MonteCarloChart";
+import { useDomain } from "../contexts/DomainContext"; // Added import
+import { apiFetch } from "@/lib/api";
 
-interface Product {
+interface Entity {
     id: number;
-    product_name: string;
-    brand_capitalized: string;
-    model: string;
-    sku: string;
-    classification: string;
-    product_type: string;
-    variant: string;
-    gtin: string;
+    entity_name: string;
+    brand_capitalized: string | null; // Changed to string | null
+    model: string | null; // Changed to string | null
+    sku: string | null; // Changed to string | null
+    classification: string | null; // Changed to string | null
+    entity_type: string | null; // Changed to string | null
+    variant: string | null; // Changed to string | null
+    gtin: string | null; // Changed to string | null
     barcode: string;
-    status: string;
+    status: string | null; // Changed to string | null
     validation_status: string;
-    [key: string]: any;
+    enrichment_status?: string;
+    normalized_json: string | null; // Added normalized_json
 }
 
-type EditableFields = Pick<Product, "product_name" | "brand_capitalized" | "model" | "sku" | "classification" | "product_type" | "validation_status" | "gtin" | "variant" | "status">;
+type EditableFields = Pick<Entity, "entity_name" | "brand_capitalized" | "model" | "sku" | "classification" | "entity_type" | "validation_status" | "gtin" | "variant" | "status">;
 
 function StatusBadge({ status }: { status: string }) {
     const styles: Record<string, string> = {
@@ -27,8 +30,9 @@ function StatusBadge({ status }: { status: string }) {
         invalid: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400",
         active: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
         inactive: "bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400",
+        pending: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
     };
-    const fallback = "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
+    const fallback = styles.pending;
 
     return (
         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status?.toLowerCase()] || fallback}`}>
@@ -37,24 +41,25 @@ function StatusBadge({ status }: { status: string }) {
     );
 }
 
-export default function ProductTable() {
-    const [products, setProducts] = useState<Product[]>([]);
+export default function EntityTable() {
+    const { activeDomain } = useDomain(); // Added activeDomain from useDomain
+    const [entities, setEntities] = useState<Entity[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [page, setPage] = useState(0);
-    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
     const [limit, setLimit] = useState(20);
 
     // Edit state
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editData, setEditData] = useState<EditableFields>({
-        product_name: "",
+        entity_name: "",
         brand_capitalized: "",
         model: "",
         sku: "",
         classification: "",
-        product_type: "",
+        entity_type: "",
         validation_status: "",
         gtin: "",
         variant: "",
@@ -75,7 +80,7 @@ export default function ProductTable() {
         return () => clearTimeout(handler);
     }, [search]);
 
-    const fetchProducts = useCallback(async () => {
+    const fetchEntities = useCallback(async () => {
         setLoading(true);
         try {
             const queryParams = new URLSearchParams({
@@ -84,31 +89,31 @@ export default function ProductTable() {
             });
             if (debouncedSearch) queryParams.append("search", debouncedSearch);
 
-            const res = await fetch(`http://localhost:8000/products?${queryParams}`);
-            if (!res.ok) throw new Error("Failed to fetch products");
-            setProducts(await res.json());
+            const res = await apiFetch(`/entities?${queryParams}`);
+            if (!res.ok) throw new Error("Failed to fetch entities");
+            setEntities(await res.json());
         } catch (error) {
-            console.error("Error fetching products:", error);
+            console.error("Error fetching entities:", error);
         } finally {
             setLoading(false);
         }
     }, [debouncedSearch, page, limit]);
 
-    useEffect(() => { fetchProducts(); }, [fetchProducts]);
+    useEffect(() => { fetchEntities(); }, [fetchEntities]);
 
-    function startEdit(product: Product) {
-        setEditingId(product.id);
+    function startEdit(entity: Entity) {
+        setEditingId(entity.id);
         setEditData({
-            product_name: product.product_name || "",
-            brand_capitalized: product.brand_capitalized || "",
-            model: product.model || "",
-            sku: product.sku || "",
-            classification: product.classification || "",
-            product_type: product.product_type || "",
-            validation_status: product.validation_status || "pending",
-            gtin: product.gtin || "",
-            variant: product.variant || "",
-            status: product.status || "",
+            entity_name: entity.entity_name || "",
+            brand_capitalized: entity.brand_capitalized || "",
+            model: entity.model || "",
+            sku: entity.sku || "",
+            classification: entity.classification || "",
+            entity_type: entity.entity_type || "",
+            validation_status: entity.validation_status || "pending",
+            gtin: entity.gtin || "",
+            variant: entity.variant || "",
+            status: entity.status || "",
         });
     }
 
@@ -120,47 +125,47 @@ export default function ProductTable() {
         if (!editingId) return;
         setSaving(true);
         try {
-            const res = await fetch(`http://localhost:8000/products/${editingId}`, {
+            const res = await apiFetch(`/entities/${editingId}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(editData),
             });
             if (!res.ok) throw new Error("Failed to update");
             const updated = await res.json();
-            setProducts((prev) => prev.map((p) => (p.id === editingId ? updated : p)));
+            setEntities((prev) => prev.map((e) => (e.id === editingId ? updated : e)));
             setEditingId(null);
         } catch (error) {
             console.error(error);
-            alert("Error updating product");
+            alert("Error updating entity");
         } finally {
             setSaving(false);
         }
     }
 
-    async function deleteProduct(id: number) {
+    async function deleteEntity(id: number) {
         setDeletingId(id);
         try {
-            const res = await fetch(`http://localhost:8000/products/${id}`, { method: "DELETE" });
+            const res = await apiFetch(`/entities/${id}`, { method: "DELETE" });
             if (!res.ok) throw new Error("Failed to delete");
-            setProducts((prev) => prev.filter((p) => p.id !== id));
+            setEntities((prev) => prev.filter((e) => e.id !== id));
         } catch (error) {
             console.error(error);
-            alert("Error deleting product");
+            alert("Error deleting entity");
         } finally {
             setDeletingId(null);
         }
     }
 
-    async function enrichProduct(id: number) {
+    async function enrichEntity(id: number) {
         setEnrichingId(id);
         try {
-            const res = await fetch(`http://localhost:8000/enrich/row/${id}`, { method: "POST" });
+            const res = await apiFetch(`/enrich/row/${id}`, { method: "POST" });
             if (!res.ok) throw new Error("Failed to enrich");
             const enriched = await res.json();
-            setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...enriched } : p)));
+            setEntities((prev) => prev.map((e) => (e.id === id ? { ...e, ...enriched } : e)));
         } catch (error) {
             console.error(error);
-            alert("Error enriching product");
+            alert("Error enriching entity");
         } finally {
             setEnrichingId(null);
         }
@@ -179,7 +184,7 @@ export default function ProductTable() {
                     </svg>
                     <input
                         type="text"
-                        placeholder="Search products, brands, models..."
+                        placeholder="Search entities..."
                         className="h-10 w-80 rounded-lg border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-700 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500 dark:focus:border-blue-500"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -197,83 +202,77 @@ export default function ProductTable() {
                         <thead>
                             <tr className="border-b border-gray-200 dark:border-gray-800">
                                 <th className={`${thClass} no-wrap w-16`}>ID</th>
-                                <th className={`${thClass} no-wrap`}>Product Name</th>
-                                <th className={`${thClass} no-wrap`}>Brand</th>
-                                <th className={`${thClass} no-wrap`}>Model</th>
-                                <th className={`${thClass} no-wrap`}>SKU</th>
-                                <th className={`${thClass} no-wrap`}>GTIN</th>
-                                <th className={`${thClass} no-wrap`}>Variant</th>
-                                <th className={`${thClass} no-wrap`}>Classification</th>
-                                <th className={`${thClass} no-wrap`}>Type</th>
-                                <th className={`${thClass} no-wrap`}>Status</th>
+                                {activeDomain ? (
+                                    activeDomain.attributes.map(attr => (
+                                        <th key={attr.name} className={`${thClass} no-wrap`}>{attr.label}</th>
+                                    ))
+                                ) : (
+                                    <th className={`${thClass} no-wrap`}>Entity Name</th>
+                                )}
+                                <th className={`${thClass} no-wrap`}>System Status</th>
                                 <th className={`${thClass} no-wrap text-right`}>Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={10} className="px-5 py-12 text-center">
+                                    <td colSpan={11} className="px-5 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                             </svg>
-                                            <span className="text-sm text-gray-500 dark:text-gray-400">Loading products...</span>
+                                            <span className="text-sm text-gray-500 dark:text-gray-400">Loading entities...</span>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : products.length === 0 ? (
+                            ) : entities.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} className="px-5 py-12 text-center">
+                                    <td colSpan={11} className="px-5 py-12 text-center">
                                         <div className="flex flex-col items-center gap-2">
                                             <svg className="h-10 w-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                                             </svg>
-                                            <span className="text-sm text-gray-500 dark:text-gray-400">No products found</span>
+                                            <span className="text-sm text-gray-500 dark:text-gray-400">No entities found</span>
                                         </div>
                                     </td>
                                 </tr>
                             ) : (
-                                products.map((product) => {
-                                    const isEditing = editingId === product.id;
+                                entities.map((entity) => {
+                                    const isEditing = editingId === entity.id;
+
+                                    let parsedJson: Record<string, any> = {};
+                                    if (entity.normalized_json) {
+                                        try { parsedJson = JSON.parse(entity.normalized_json); } catch (e) { }
+                                    }
 
                                     if (isEditing) {
                                         return (
-                                            <tr key={product.id} className="bg-blue-50/50 dark:bg-blue-500/5">
-                                                <td className="px-5 py-2.5 text-gray-500 dark:text-gray-400">{product.id}</td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.product_name} onChange={(e) => setEditData({ ...editData, product_name: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.brand_capitalized} onChange={(e) => setEditData({ ...editData, brand_capitalized: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.model} onChange={(e) => setEditData({ ...editData, model: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} placeholder="SKU" value={editData.sku} onChange={(e) => setEditData({ ...editData, sku: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} placeholder="GTIN" value={editData.gtin} onChange={(e) => setEditData({ ...editData, gtin: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.variant} onChange={(e) => setEditData({ ...editData, variant: e.target.value })} />
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <select
-                                                        className={inputClass}
-                                                        value={editData.classification}
-                                                        onChange={(e) => setEditData({ ...editData, classification: e.target.value })}
-                                                    >
-                                                        <option value="">Select...</option>
-                                                        <option value="Producto">Producto</option>
-                                                        <option value="Servicio">Servicio</option>
-                                                        <option value="Pack/Promoción">Pack/Promoción</option>
-                                                    </select>
-                                                </td>
-                                                <td className="px-5 py-2.5">
-                                                    <input className={inputClass} value={editData.product_type} onChange={(e) => setEditData({ ...editData, product_type: e.target.value })} />
-                                                </td>
+                                            <tr key={entity.id} className="bg-blue-50/50 dark:bg-blue-500/5">
+                                                <td className="px-5 py-2.5 text-gray-500 dark:text-gray-400">{entity.id}</td>
+                                                {activeDomain ? (
+                                                    activeDomain.attributes.map(attr => {
+                                                        const val = attr.is_core ? editData[attr.name as keyof typeof editData] : (parsedJson[attr.name] || "");
+                                                        // Fallback safe value rendering
+                                                        return (
+                                                            <td key={attr.name} className="px-5 py-2.5">
+                                                                <input
+                                                                    className={inputClass}
+                                                                    value={String(val || "")}
+                                                                    onChange={(e) => {
+                                                                        if (attr.is_core) setEditData({ ...editData, [attr.name]: e.target.value });
+                                                                    }}
+                                                                    disabled={!attr.is_core} // Just core editing supported for now
+                                                                    title={!attr.is_core ? "Extended attributes cannot be edited natively yet" : ""}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <td className="px-5 py-2.5">
+                                                        <input className={inputClass} value={editData.entity_name} onChange={(e) => setEditData({ ...editData, entity_name: e.target.value })} />
+                                                    </td>
+                                                )}
                                                 <td className="px-5 py-2.5">
                                                     <select
                                                         className={inputClass}
@@ -320,37 +319,37 @@ export default function ProductTable() {
                                     }
 
                                     return (
-                                        <tr key={product.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                            <td className="px-5 py-3.5 text-gray-500 dark:text-gray-400">{product.id}</td>
-                                            <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
-                                                {product.product_name}
-                                            </td>
-                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.brand_capitalized || "—"}</td>
-                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.model || "—"}</td>
-                                            <td className="px-5 py-3.5 no-wrap">
-                                                {product.sku ? (
-                                                    <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                                                        {product.sku}
-                                                    </code>
-                                                ) : <span className="text-gray-400">—</span>}
-                                            </td>
-                                            <td className="px-5 py-3.5 no-wrap">
-                                                {product.gtin ? (
-                                                    <code className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 dark:bg-blue-500/10 dark:text-blue-400">
-                                                        {product.gtin}
-                                                    </code>
-                                                ) : <span className="text-gray-400">—</span>}
-                                            </td>
-                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300 text-xs italic">{product.variant || "—"}</td>
-                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.classification || "—"}</td>
-                                            <td className="px-5 py-3.5 text-gray-600 dark:text-gray-300">{product.product_type}</td>
+                                        <tr key={entity.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                            <td className="px-5 py-3.5 text-gray-500 dark:text-gray-400">{entity.id}</td>
+                                            {activeDomain ? (
+                                                activeDomain.attributes.map(attr => {
+                                                    let val = attr.is_core ? (entity as any)[attr.name] : (parsedJson[attr.name] || "");
+                                                    return (
+                                                        <td key={attr.name} className="px-5 py-3.5 text-gray-600 dark:text-gray-300">
+                                                            {val !== null && val !== "" ? (
+                                                                attr.name === "gtin" || attr.name === "sku" || attr.name === "doi" ? (
+                                                                    <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                                                        {val}
+                                                                    </code>
+                                                                ) : String(val)
+                                                            ) : (
+                                                                <span className="text-gray-400">—</span>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })
+                                            ) : (
+                                                <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
+                                                    {entity.entity_name}
+                                                </td>
+                                            )}
                                             <td className="px-5 py-3.5">
-                                                <StatusBadge status={product.validation_status} />
+                                                <StatusBadge status={entity.validation_status} />
                                             </td>
                                             <td className="px-5 py-3.5">
                                                 <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                                                     <button
-                                                        onClick={() => setSelectedProduct(product)}
+                                                        onClick={() => setSelectedEntity(entity)}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
                                                         title="View Details"
                                                     >
@@ -360,7 +359,7 @@ export default function ProductTable() {
                                                         </svg>
                                                     </button>
                                                     <button
-                                                        onClick={() => startEdit(product)}
+                                                        onClick={() => startEdit(entity)}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
                                                         title="Edit"
                                                     >
@@ -370,15 +369,15 @@ export default function ProductTable() {
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm(`Delete product #${product.id} "${product.product_name}"?`)) {
-                                                                deleteProduct(product.id);
+                                                            if (confirm(`Delete entity #${entity.id} "${entity.entity_name}"?`)) {
+                                                                deleteEntity(entity.id);
                                                             }
                                                         }}
-                                                        disabled={deletingId === product.id}
+                                                        disabled={deletingId === entity.id}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-red-100 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                                                         title="Delete"
                                                     >
-                                                        {deletingId === product.id ? (
+                                                        {deletingId === entity.id ? (
                                                             <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -390,12 +389,12 @@ export default function ProductTable() {
                                                         )}
                                                     </button>
                                                     <button
-                                                        onClick={() => enrichProduct(product.id)}
-                                                        disabled={enrichingId === product.id}
+                                                        onClick={() => enrichEntity(entity.id)}
+                                                        disabled={enrichingId === entity.id}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-purple-100 hover:text-purple-600 disabled:opacity-50 dark:hover:bg-purple-500/10 dark:hover:text-purple-400"
                                                         title="Enrich with OpenAlex"
                                                     >
-                                                        {enrichingId === product.id ? (
+                                                        {enrichingId === entity.id ? (
                                                             <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -417,15 +416,15 @@ export default function ProductTable() {
                 </div>
 
                 {/* Details Modal */}
-                {selectedProduct && (
+                {selectedEntity && (
                     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
                         <div className="flex h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
                             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                                 <div>
-                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedProduct.product_name}</h2>
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedEntity.entity_name}</h2>
                                     <p className="text-sm text-gray-500">Full details and attributes</p>
                                 </div>
-                                <button onClick={() => setSelectedProduct(null)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+                                <button onClick={() => setSelectedEntity(null)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800">
                                     <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
@@ -433,7 +432,7 @@ export default function ProductTable() {
                             </div>
                             <div className="flex-1 overflow-y-auto p-6">
                                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
-                                    {Object.entries(selectedProduct).map(([key, value]) => {
+                                    {Object.entries(selectedEntity).map(([key, value]) => {
                                         if (key === "id" || key === "normalized_json") return null;
                                         // Format key to Header Case
                                         const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -447,15 +446,15 @@ export default function ProductTable() {
                                         );
                                     })}
                                 </div>
-                                {selectedProduct.enrichment_status === "completed" && (
+                                {selectedEntity.enrichment_status === "completed" && (
                                     <div className="mt-8 rounded-xl border border-purple-100 bg-white p-5 shadow-sm dark:border-purple-500/10 dark:bg-gray-800/50">
-                                        <MonteCarloChart productId={selectedProduct.id} />
+                                        <MonteCarloChart productId={selectedEntity.id} />
                                     </div>
                                 )}
                             </div>
                             <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
                                 <button
-                                    onClick={() => setSelectedProduct(null)}
+                                    onClick={() => setSelectedEntity(null)}
                                     className="w-full rounded-xl bg-gray-100 py-2.5 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
                                 >
                                     Close Details
@@ -502,7 +501,7 @@ export default function ProductTable() {
                         </div>
                         <button
                             onClick={() => setPage(p => p + 1)}
-                            disabled={products.length < limit || loading}
+                            disabled={entities.length < limit || loading}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                         >
                             Next

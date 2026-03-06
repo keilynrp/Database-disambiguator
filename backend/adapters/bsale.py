@@ -2,10 +2,13 @@
 Bsale API adapter.
 Docs: https://www.bsale.com.pe/docs/api/
 """
+import logging
 import requests
 from typing import List, Optional
 
-from .base import BaseStoreAdapter, RemoteProduct, ConnectionTestResult
+from .base import BaseStoreAdapter, RemoteEntity, ConnectionTestResult
+
+logger = logging.getLogger(__name__)
 
 
 class BsaleAdapter(BaseStoreAdapter):
@@ -47,15 +50,15 @@ class BsaleAdapter(BaseStoreAdapter):
                 success=True,
                 message="Connected successfully to Bsale",
                 store_name="Bsale Store",
-                product_count=count,
+                entity_count=count,
                 api_version="Bsale v1",
             )
         except Exception as e:
             return ConnectionTestResult(success=False, message=str(e))
 
-    def _parse_product(self, p: dict) -> RemoteProduct:
+    def _parse_entity(self, item: dict) -> RemoteEntity:
         variants = []
-        for v in p.get("variants", {}).get("items", []):
+        for v in item.get("variants", {}).get("items", []):
             variants.append({
                 "id": str(v.get("id", "")),
                 "sku": v.get("code", ""),
@@ -65,61 +68,64 @@ class BsaleAdapter(BaseStoreAdapter):
             })
 
         first_variant = variants[0] if variants else {}
-        product_type = p.get("product_type", {})
+        entity_type = item.get("entity_type", {})
 
-        return RemoteProduct(
-            remote_id=str(p.get("id", "")),
-            name=p.get("name", ""),
-            canonical_url=p.get("urlSlug", "") or f"{self.base_url}/product/{p.get('id', '')}",
+        return RemoteEntity(
+            remote_id=str(item.get("id", "")),
+            name=item.get("name", ""),
+            canonical_url=item.get("urlSlug", "") or f"{self.base_url}/product/{item.get('id', '')}",
             sku=first_variant.get("sku", ""),
             barcode=first_variant.get("barcode", ""),
             price=first_variant.get("price", ""),
             compare_at_price=None,
             stock=None,
-            status="active" if p.get("state") == 0 else "inactive",
-            description=p.get("description", ""),
+            status="active" if item.get("state") == 0 else "inactive",
+            description=item.get("description", ""),
             short_description=None,
             brand=None,
-            category=product_type.get("name", "") if isinstance(product_type, dict) else "",
+            category=entity_type.get("name", "") if isinstance(entity_type, dict) else "",
             tags=[],
             images=[],
             weight=None,
             dimensions=None,
             variants=variants,
-            raw_data=p,
+            raw_data=item,
         )
 
-    def fetch_products(self, page: int = 1, per_page: int = 50) -> List[RemoteProduct]:
+    def fetch_entities(self, page: int = 1, per_page: int = 50) -> List[RemoteEntity]:
         offset = (page - 1) * per_page
         resp = self._request("GET", "products.json", params={"limit": per_page, "offset": offset, "expand": "[variants]"})
         data = resp.json()
         items = data.get("items", [])
-        return [self._parse_product(p) for p in items]
+        return [self._parse_entity(item) for item in items]
 
-    def fetch_product_by_id(self, remote_id: str) -> Optional[RemoteProduct]:
+    def fetch_entity_by_id(self, remote_id: str) -> Optional[RemoteEntity]:
         try:
             resp = self._request("GET", f"products/{remote_id}.json", params={"expand": "[variants]"})
-            return self._parse_product(resp.json())
-        except Exception:
+            return self._parse_entity(resp.json())
+        except Exception as exc:
+            logger.warning("Bsale fetch_entity_by_id(%s) failed: %s", remote_id, exc)
             return None
 
-    def fetch_product_count(self) -> int:
+    def fetch_entity_count(self) -> int:
         try:
             resp = self._request("GET", "products.json", params={"limit": 1})
             return resp.json().get("count", 0)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Bsale fetch_entity_count failed: %s", exc)
             return 0
 
-    def push_product_update(self, remote_id: str, updates: dict) -> bool:
-        bsale_payload: dict = {}
+    def push_entity_update(self, remote_id: str, updates: dict) -> bool:
+        payload: dict = {}
         if "name" in updates:
-            bsale_payload["name"] = updates["name"]
+            payload["name"] = updates["name"]
         if "description" in updates:
-            bsale_payload["description"] = updates["description"]
+            payload["description"] = updates["description"]
 
         try:
-            if bsale_payload:
-                self._request("PUT", f"products/{remote_id}.json", json_data=bsale_payload)
+            if payload:
+                self._request("PUT", f"products/{remote_id}.json", json_data=payload)
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Bsale push_entity_update(%s) failed: %s", remote_id, exc)
             return False

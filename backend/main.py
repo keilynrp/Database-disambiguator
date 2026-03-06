@@ -1,85 +1,299 @@
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from typing import List
-import pandas as pd
+import asyncio
 import io
-import re
 import json
-from datetime import datetime
+import logging
+import math
+import os
+import re
+import shutil
+import tempfile
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+import pandas as pd
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Path, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from pydantic import BaseModel, Field
+from sqlalchemy import inspect, text, func, or_, update
+from sqlalchemy.orm import Session
+from thefuzz import process, fuzz
 
 from backend import models, schemas, database, enrichment_worker
+from backend.database import get_db
+from backend.adapters import get_adapter
+from backend.analytics import rag_engine
+from backend.analytics.montecarlo import simulate_citation_impact
+from backend.analytics.vector_store import VectorStoreService
+from backend.auth import authenticate_user, create_access_token, get_current_user, require_role
 from backend.datasource_analyzer import DataSourceAnalyzer
-from sqlalchemy import inspect, text, func
+from backend.encryption import encrypt, decrypt
+from backend.llm_agent import resolve_canonical_name
+from backend.olap import olap_engine
+from backend.schema_registry import registry, DomainSchema
+
+logger = logging.getLogger(__name__)
 
 models.Base.metadata.create_all(bind=database.engine)
 
-# Lightweight migration: add enrichment columns
+# Lightweight migration: add columns introduced after initial schema creation
 with database.engine.connect() as conn:
     inspector = inspect(database.engine)
     if "harmonization_logs" in inspector.get_table_names():
         columns = [col["name"] for col in inspector.get_columns("harmonization_logs")]
         if "reverted" not in columns:
             conn.execute(text("ALTER TABLE harmonization_logs ADD COLUMN reverted BOOLEAN DEFAULT 0"))
-            
-    if "raw_products" in inspector.get_table_names():
-        columns = [col["name"] for col in inspector.get_columns("raw_products")]
-        if "enrichment_doi" not in columns:
-            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_doi VARCHAR"))
-            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_citation_count INTEGER DEFAULT 0"))
-            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_concepts TEXT"))
-            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_source VARCHAR"))
-            conn.execute(text("ALTER TABLE raw_products ADD COLUMN enrichment_status VARCHAR DEFAULT 'none'"))
             conn.commit()
 
-app = FastAPI()
+    if "raw_entities" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("raw_entities")]
+        if "enrichment_doi" not in columns:
+            conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_doi VARCHAR"))
+            conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_citation_count INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_concepts TEXT"))
+            conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_source VARCHAR"))
+            conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_status VARCHAR DEFAULT 'none'"))
+            conn.commit()
 
-import asyncio
+    if "users" in inspector.get_table_names():
+        user_cols = [col["name"] for col in inspector.get_columns("users")]
+        if "failed_attempts" not in user_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN locked_until VARCHAR"))
+            conn.commit()
 
-@app.on_event("startup")
-async def start_background_workers():
-    # Helper to yield DB sessions for background worker safely
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ──────────────────────────────────────────────────────────────
+    with database.SessionLocal() as db:
+        # Reset stale "processing" records from a previous crashed session
+        enrichment_worker.reset_stale_processing_records(db)
+
+        # Bootstrap: auto-create super_admin from env vars if no users exist
+        if db.query(models.User).count() == 0:
+            from backend.auth import hash_password as _hash_pw
+            bootstrap_user = models.User(
+                username=os.environ.get("ADMIN_USERNAME", "admin"),
+                password_hash=_hash_pw(os.environ.get("ADMIN_PASSWORD", "changeit")),
+                role="super_admin",
+                is_active=True,
+            )
+            db.add(bootstrap_user)
+            db.commit()
+            logger.info("Bootstrap: super_admin '%s' created", bootstrap_user.username)
+
     def get_db_gen():
         while True:
             db = database.SessionLocal()
             try:
                 yield db
             finally:
-                pass # The worker will close after each loop iteration
-    
-    # We create the task and let it run
+                db.close()  # Safety net: worker also closes explicitly each iteration
+
     asyncio.create_task(enrichment_worker.background_enrichment_worker(get_db_gen()))
 
+    yield  # Server is running
+    # ── Shutdown (nothing to clean up currently) ──────────────────────────────
+
+
+limiter = Limiter(key_func=get_remote_address)
+app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+
+_cors_origins_env = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3004,http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for dev
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["X-Total-Count"],
 )
 
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# ── Authentication ─────────────────────────────────────────────────────────
+
+@app.post("/auth/token", tags=["auth"])
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """
+    Obtain a Bearer token. Credentials are managed in the users table.
+    Rate-limited to 5 attempts per minute per IP.
+    """
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = create_access_token(subject=user.username, role=user.role)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+# ── User Management (RBAC) ─────────────────────────────────────────────────
+
+@app.get("/users/me", response_model=schemas.UserResponse, tags=["users"])
+def get_my_profile(current_user: models.User = Depends(get_current_user)):
+    """Return the profile of the currently authenticated user."""
+    return current_user
+
+
+@app.post("/users/me/password", tags=["users"])
+def change_my_password(
+    payload: schemas.PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Change the authenticated user's own password."""
+    from backend.auth import verify_password, hash_password as _hp
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current_user.password_hash = _hp(payload.new_password)
+    db.commit()
+    return {"message": "Password updated successfully"}
+
+
+@app.get("/users", response_model=List[schemas.UserResponse], tags=["users"])
+def list_users(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """List all users. Requires super_admin."""
+    return db.query(models.User).offset(skip).limit(limit).all()
+
+
+@app.post("/users", response_model=schemas.UserResponse, status_code=201, tags=["users"])
+def create_user(
+    payload: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """Create a new user. Requires super_admin."""
+    existing = db.query(models.User).filter(models.User.username == payload.username).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    from backend.auth import hash_password as _hash_pw
+    new_user = models.User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=_hash_pw(payload.password),
+        role=payload.role.value,
+        is_active=True,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@app.get("/users/{user_id}", response_model=schemas.UserResponse, tags=["users"])
+def get_user(
+    user_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """Get a user by ID. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.put("/users/{user_id}", response_model=schemas.UserResponse, tags=["users"])
+def update_user(
+    user_id: int = Path(..., ge=1),
+    payload: schemas.UserUpdate = ...,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin")),
+):
+    """Update a user's email, password, role, or active status. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Prevent self-role change
+    if user.id == current_user.id and payload.role is not None and payload.role.value != current_user.role:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+    # Prevent deactivating self
+    if user.id == current_user.id and payload.is_active is False:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    # Ensure at least one super_admin remains active
+    if payload.role is not None and user.role == "super_admin" and payload.role.value != "super_admin":
+        active_superadmins = db.query(models.User).filter(
+            models.User.role == "super_admin", models.User.is_active == True
+        ).count()
+        if active_superadmins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last active super_admin")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "password" in update_data:
+        from backend.auth import hash_password as _hash_pw
+        update_data["password_hash"] = _hash_pw(update_data.pop("password"))
+    if "role" in update_data:
+        update_data["role"] = update_data["role"].value if hasattr(update_data["role"], "value") else update_data["role"]
+
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/users/{user_id}", tags=["users"])
+def delete_user(
+    user_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin")),
+):
+    """Soft-delete (deactivate) a user. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    # Ensure at least one super_admin remains active
+    if user.role == "super_admin":
+        active_superadmins = db.query(models.User).filter(
+            models.User.role == "super_admin", models.User.is_active == True
+        ).count()
+        if active_superadmins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot deactivate the last active super_admin")
+    user.is_active = False
+    db.commit()
+    return {"message": "User deactivated", "id": user_id}
+
 
 COLUMN_MAPPING = {
-    "Nombre del Producto": "product_name",
+    "Nombre del Producto": "entity_name",
     "Clasificación": "classification",
-    "Tipo de Producto": "product_type",
+    "Tipo de Producto": "entity_type",
     "¿Posible vender en cantidad decimal?": "is_decimal_sellable",
     "¿Controlarás el stock del producto?": "control_stock",
     "Estado": "status",
     "Impuestos": "taxes",
     "Variante": "variant",
-    "Código universal de producto": "product_code_universal_1",
-    "Codigo universal": "product_code_universal_2",
-    "Codigo universal del producto": "product_code_universal_3",
-    "CODIGO UNIVERSAL DEL PRODRUCTO ": "product_code_universal_4", 
+    "Código universal de producto": "entity_code_universal_1",
+    "Codigo universal": "entity_code_universal_2",
+    "Codigo universal del producto": "entity_code_universal_3",
+    "CODIGO UNIVERSAL DEL PRODRUCTO ": "entity_code_universal_4", 
     "marca": "brand_lower",
     "Marca": "brand_capitalized",
     "modelo": "model",
@@ -88,7 +302,7 @@ COLUMN_MAPPING = {
     "Motivo de GTIN vacío": "gtin_empty_reason_1",
     "Motivo GTIN vacío ": "gtin_empty_reason_2",
     "Motivo GTIN vacia": "gtin_empty_reason_3",
-    "Motivo GTIN de producto": "gtin_product_reason",
+    "Motivo GTIN de producto": "gtin_entity_reason",
     "motivo GTIN": "gtin_reason_lower",
     "Mtivo GTIN vacio": "gtin_empty_reason_typo",
     "EQUIMAPIENTO": "equipment",
@@ -100,67 +314,161 @@ COLUMN_MAPPING = {
     "Sucursales": "branches",
     "Fecha de creacion": "creation_date",
     "Estado Variante": "variant_status",
-    "Clave de producto": "product_key",
+    "Clave de producto": "entity_key",
     "Unidad de medida": "unit_of_measure"
 }
 
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
+@app.post("/upload", status_code=201)
+async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+
     filename = file.filename.lower()
-    if not (filename.endswith(".xlsx") or filename.endswith(".csv")):
-        raise HTTPException(status_code=400, detail="Invalid file format. Only .xlsx and .csv allowed.")
+    allowed_extensions = (".xlsx", ".csv", ".json", ".xml", ".parquet", ".jsonld", ".rdf", ".ttl")
+    if not any(filename.endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(status_code=400, detail=f"Invalid file format. Allowed: {', '.join(allowed_extensions)}")
 
     contents = await file.read()
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is 20 MB (received {len(contents) // (1024*1024)} MB).",
+        )
+    records = []
     
-    if filename.endswith(".xlsx"):
-        df = pd.read_excel(io.BytesIO(contents))
-    else:
-        # Detect delimiter or just assume comma with fallback? 
-        # Usually Excel exports use semicolons in some locales, but CSV implies Comma.
-        try:
-            df = pd.read_csv(io.BytesIO(contents), encoding='utf-8')
-        except UnicodeDecodeError:
-            df = pd.read_csv(io.BytesIO(contents), encoding='latin-1')
+    try:
+        if filename.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents))
+            records = df.to_dict("records")
+        elif filename.endswith(".csv"):
+            try:
+                df = pd.read_csv(io.BytesIO(contents), encoding='utf-8')
+            except UnicodeDecodeError:
+                df = pd.read_csv(io.BytesIO(contents), encoding='latin-1')
+            records = df.to_dict("records")
+        elif filename.endswith(".parquet"):
+            df = pd.read_parquet(io.BytesIO(contents))
+            records = df.to_dict("records")
+        elif filename.endswith(".json") or filename.endswith(".jsonld"):
+            data = json.loads(contents.decode("utf-8"))
+            if isinstance(data, dict):
+                # If root is dict, either single record or we unwrap the first list
+                list_data = next((v for v in data.values() if isinstance(v, list)), [data])
+                records = list_data
+            elif isinstance(data, list):
+                records = data
+        elif filename.endswith(".xml"):
+            root = ET.fromstring(contents.decode("utf-8"))
+            for child in root:
+                record = {}
+                for subchild in child:
+                    record[subchild.tag] = subchild.text
+                if record:
+                    records.append(record)
+        elif filename.endswith(".rdf") or filename.endswith(".ttl"):
+            import rdflib
+            g = rdflib.Graph()
+            format_type = "ttl" if filename.endswith(".ttl") else "xml"
+            g.parse(data=contents.decode("utf-8"), format=format_type)
+            
+            # Very basic RDF to flat dict transformation grouped by subject
+            entities = {}
+            for s, p, o in g:
+                subj = str(s)
+                pred = str(p).split("/")[-1].split("#")[-1]
+                obj = str(o)
+                if subj not in entities:
+                    entities[subj] = {"entity_key": subj}
+                if pred in entities[subj]:
+                    entities[subj][pred] += f"; {obj}"
+                else:
+                    entities[subj][pred] = obj
+            records = list(entities.values())
+            
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
 
-    df.columns = df.columns.str.strip()
+    if not records:
+        return {"message": "No valid data found or file is empty", "total_rows": 0, "matched_columns": [], "unmatched_columns": []}
 
-    # Track which columns were matched vs ignored
-    # We use stripped keys to be more resilient to surrounding whitespace in headers
+    _MAX_ROWS = 100_000
+    if len(records) > _MAX_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File contains too many rows ({len(records):,}). Maximum allowed is {_MAX_ROWS:,} rows per upload.",
+        )
+
+    # Gather all unique keys from records
+    all_keys = set()
+    for row in records[:100]:
+        if isinstance(row, dict):
+            all_keys.update(row.keys())
+
     stripped_mapping = {k.strip(): v for k, v in COLUMN_MAPPING.items()}
-    matched_columns = [col for col in df.columns if col in stripped_mapping]
-    unmatched_columns = [col for col in df.columns if col not in stripped_mapping]
+    valid_model_keys = set(COLUMN_MAPPING.values())
+
+    matched_columns = set()
+    unmatched_columns = set()
+    for col in all_keys:
+        col_str = str(col).strip()
+        if col_str in stripped_mapping or col_str in valid_model_keys:
+            matched_columns.add(col_str)
+        else:
+            unmatched_columns.add(col_str)
 
     objects = []
-    for _, row in df.iterrows():
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+            
         row_data = {}
-        for excel_col in matched_columns:
-            model_field = stripped_mapping[excel_col]
-            val = row[excel_col]
-            if pd.isna(val):
+        unmatched_data = {}
+        
+        for k, val in row.items():
+            # Check for NaN correctly
+            is_nan = False
+            if type(val) is float and math.isnan(val):
+                is_nan = True
+            elif pd.isna(val) if hasattr(pd, "isna") else False:
+                # Handle Pandas NaT / NA
+                try:
+                    if pd.isna(val): is_nan = True
+                except (TypeError, ValueError):
+                    pass
+
+            if is_nan:
                 val = None
+                
+            sk = str(k).strip()
+            
+            if sk in stripped_mapping:
+                model_field = stripped_mapping[sk]
+                row_data[model_field] = str(val) if val is not None else None
+            elif sk in valid_model_keys:
+                row_data[sk] = str(val) if val is not None else None
             else:
-                val = str(val)
-            row_data[model_field] = val
+                unmatched_data[sk] = val
 
-        objects.append(models.RawProduct(**row_data))
+        if unmatched_data:
+            # Safely serialize using default=str to avoid datetime/NaN crash
+            row_data["normalized_json"] = json.dumps(unmatched_data, default=str, ensure_ascii=False)
 
-    db.bulk_save_objects(objects)
+        objects.append(models.RawEntity(**row_data))
+
+    _CHUNK_SIZE = 10_000
+    for i in range(0, len(objects), _CHUNK_SIZE):
+        db.bulk_save_objects(objects[i : i + _CHUNK_SIZE])
     db.commit()
 
     return {
-        "message": f"Successfully imported {len(objects)} rows",
+        "message": f"Successfully imported {len(objects)} entities",
         "total_rows": len(objects),
-        "matched_columns": matched_columns,
-        "unmatched_columns": unmatched_columns,
+        "matched_columns": list(matched_columns),
+        "unmatched_columns": list(unmatched_columns),
     }
 
 
-import shutil
-import tempfile
-import os
-
 @app.post("/analyze")
-async def analyze_datasource(file: UploadFile = File(...)):
+async def analyze_datasource(file: UploadFile = File(...), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     """
     Analyzes the structure (columns, keys, tags, predicates) of a given file.
     Supports CSV, Excel, JSON, XML, Parquet, RDF, Logs, etc.
@@ -189,162 +497,215 @@ async def analyze_datasource(file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing file: {str(e)}")
+        logger.exception("Error analyzing file '%s'", file.filename)
+        raise HTTPException(status_code=500, detail="Error analyzing file. Check server logs for details.")
     finally:
         # Clean up
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
 
-from sqlalchemy import or_, func, update
+@app.get("/domains", response_model=List[DomainSchema])
+def get_domains(_: models.User = Depends(get_current_user)):
+    """Returns all available domain schemas in the registry."""
+    return registry.get_all_domains()
 
-@app.get("/products", response_model=List[schemas.Product])
-def get_products(skip: int = 0, limit: int = 100, search: str = None, db: Session = Depends(get_db)):
-    query = db.query(models.RawProduct)
-    
+@app.get("/domains/{domain_id}", response_model=DomainSchema)
+def get_domain(domain_id: str, _: models.User = Depends(get_current_user)):
+    domain = registry.get_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain schema not found")
+    return domain
+
+@app.get("/olap/{domain_id}")
+def get_olap_cube(domain_id: str, _: models.User = Depends(get_current_user)):
+    """
+    Returns DuckDB OLAP distributions and multidimensional slice metrics for the given domain schema.
+    """
+    try:
+        cube = olap_engine.generate_cube_metrics(domain_id)
+        return cube
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("OLAP error for domain '%s'", domain_id)
+        raise HTTPException(status_code=500, detail="OLAP processing error. Check server logs for details.")
+
+@app.get("/entities", response_model=List[schemas.Entity])
+def get_entities(
+    response: Response,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    search: str = None,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    query = db.query(models.RawEntity)
+
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
             or_(
-                models.RawProduct.product_name.ilike(search_filter),
-                models.RawProduct.brand_capitalized.ilike(search_filter),
-                models.RawProduct.model.ilike(search_filter),
-                models.RawProduct.sku.ilike(search_filter)
+                models.RawEntity.entity_name.ilike(search_filter),
+                models.RawEntity.brand_capitalized.ilike(search_filter),
+                models.RawEntity.model.ilike(search_filter),
+                models.RawEntity.sku.ilike(search_filter)
             )
         )
-    
-    products = query.offset(skip).limit(limit).all()
-    return products
+
+    total = query.count()
+    entities = query.offset(skip).limit(limit).all()
+
+    response.headers["X-Total-Count"] = str(total)
+    return entities
 
 
-@app.get("/products/grouped")
-def get_products_grouped(skip: int = 0, limit: int = 100, search: str = None, db: Session = Depends(get_db)):
+@app.get("/entities/grouped")
+def get_entities_grouped(
+    response: Response,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    search: str = None,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
     """
-    Group products by product_name and show all variants for each product.
+    Group products by entity_name and show all variants for each product.
     Similar to OpenRefine's clustering/faceting feature.
     """
-    # Subquery to count variants per product_name
+    # Subquery to count variants per entity_name
     variant_counts = db.query(
-        models.RawProduct.product_name,
-        func.count(models.RawProduct.id).label("variant_count")
+        models.RawEntity.entity_name,
+        func.count(models.RawEntity.id).label("variant_count")
     ).filter(
-        models.RawProduct.product_name != None
-    ).group_by(models.RawProduct.product_name).subquery()
+        models.RawEntity.entity_name != None
+    ).group_by(models.RawEntity.entity_name).subquery()
     
     # Main query
     query = db.query(
-        models.RawProduct.product_name,
+        models.RawEntity.entity_name,
         variant_counts.c.variant_count
     ).join(
         variant_counts,
-        models.RawProduct.product_name == variant_counts.c.product_name
+        models.RawEntity.entity_name == variant_counts.c.entity_name
     ).group_by(
-        models.RawProduct.product_name,
+        models.RawEntity.entity_name,
         variant_counts.c.variant_count
     )
     
     if search:
         search_filter = f"%{search}%"
-        query = query.filter(models.RawProduct.product_name.ilike(search_filter))
+        query = query.filter(models.RawEntity.entity_name.ilike(search_filter))
     
     # Order by variant count descending (products with most variants first)
     query = query.order_by(variant_counts.c.variant_count.desc())
-    
+
+    # Total distinct entity names (for pagination UI)
+    total_groups = query.count()
+    response.headers["X-Total-Count"] = str(total_groups)
+
     # Paginate
     product_groups = query.offset(skip).limit(limit).all()
-    
-    # For each product name, fetch all its variants
-    result = []
-    for product_name, variant_count in product_groups:
-        variants = db.query(models.RawProduct).filter(
-            models.RawProduct.product_name == product_name
-        ).all()
-        
-        result.append({
-            "product_name": product_name,
+
+    # Single query to fetch all variants for the current page in one round-trip
+    entity_names = [row[0] for row in product_groups]
+    if not entity_names:
+        return []
+
+    all_variants = (
+        db.query(models.RawEntity)
+        .filter(models.RawEntity.entity_name.in_(entity_names))
+        .all()
+    )
+
+    # Group variants by entity_name in Python (O(N) instead of N DB round-trips)
+    variants_by_name: dict[str, list] = defaultdict(list)
+    for v in all_variants:
+        variants_by_name[v.entity_name].append(v)
+
+    return [
+        {
+            "entity_name": entity_name,
             "variant_count": variant_count,
-            "variants": variants
-        })
-    
-    return result
+            "variants": variants_by_name.get(entity_name, []),
+        }
+        for entity_name, variant_count in product_groups
+    ]
 
 
-@app.put("/products/{product_id}", response_model=schemas.Product)
-def update_product(product_id: int, payload: schemas.ProductBase, db: Session = Depends(get_db)):
-    product = db.query(models.RawProduct).filter(models.RawProduct.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+@app.put("/entities/{entity_id}", response_model=schemas.Entity)
+def update_entity(entity_id: int = Path(..., ge=1), payload: schemas.EntityBase = ..., db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    entity = db.query(models.RawEntity).filter(models.RawEntity.id == entity_id).first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
 
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(product, field, value)
+        setattr(entity, field, value)
 
     db.commit()
-    db.refresh(product)
-    return product
+    db.refresh(entity)
+    return entity
 
 
 
 
-@app.delete("/products/all")
-def purge_all_products(include_rules: str = Query("false"), db: Session = Depends(get_db)):
-    # Convert string to boolean
-    include_rules_bool = include_rules.lower() in ("true", "1", "yes")
-    
-    product_count = db.query(func.count(models.RawProduct.id)).scalar() or 0
-    db.query(models.RawProduct).delete()
+@app.delete("/entities/all")
+def purge_all_entities(include_rules: bool = Query(False), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    entity_count = db.query(func.count(models.RawEntity.id)).scalar() or 0
+    db.query(models.RawEntity).delete()
 
     rules_count = 0
-    if include_rules_bool:
+    if include_rules:
         rules_count = db.query(func.count(models.NormalizationRule.id)).scalar() or 0
         db.query(models.NormalizationRule).delete()
 
     db.commit()
     return {
-        "message": "Database purged successfully",
-        "products_deleted": product_count,
+        "message": "Repository purged successfully",
+        "entities_deleted": entity_count,
         "rules_deleted": rules_count,
     }
 
 
-@app.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(models.RawProduct).filter(models.RawProduct.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(product)
+@app.delete("/entities/{entity_id}")
+def delete_entity(entity_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    entity = db.query(models.RawEntity).filter(models.RawEntity.id == entity_id).first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    db.delete(entity)
     db.commit()
-    return {"message": "Product deleted", "id": product_id}
+    return {"message": "Entity deleted", "id": entity_id}
 
 
-@app.post("/enrich/row/{product_id}", response_model=schemas.Product)
-def enrich_single_product(product_id: int, db: Session = Depends(get_db)):
+@app.post("/enrich/row/{entity_id}", response_model=schemas.Entity)
+def enrich_single_entity(entity_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     """Enriches a single row manually (e.g. from a UI click)"""
-    product = db.query(models.RawProduct).filter(models.RawProduct.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    entity = db.query(models.RawEntity).filter(models.RawEntity.id == entity_id).first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
     
     # Force single enrichment fetch
-    enriched = enrichment_worker.enrich_single_record(db, product)
+    enriched = enrichment_worker.enrich_single_record(db, entity)
     return enriched
 
 @app.post("/enrich/bulk")
-def enrich_bulk_queue(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def enrich_bulk_queue(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     """Queues missing records for background enrichment"""
     count = enrichment_worker.trigger_enrichment_bulk(db, skip=skip, limit=limit)
     return {"message": "Bulk queue triggered", "queued_records": count}
 
 
 @app.get("/enrich/stats")
-def get_enrichment_stats(db: Session = Depends(get_db)):
+def get_enrichment_stats(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     """Returns enrichment statistics for the predictive analytics dashboard."""
-    total = db.query(func.count(models.RawProduct.id)).scalar() or 0
+    total = db.query(func.count(models.RawEntity.id)).scalar() or 0
 
     # Status breakdown
     status_rows = db.query(
-        models.RawProduct.enrichment_status,
-        func.count(models.RawProduct.id)
-    ).group_by(models.RawProduct.enrichment_status).all()
+        models.RawEntity.enrichment_status,
+        func.count(models.RawEntity.id)
+    ).group_by(models.RawEntity.enrichment_status).all()
     status_breakdown = {row[0] or "none": row[1] for row in status_rows}
 
     enriched_count = status_breakdown.get("completed", 0)
@@ -353,13 +714,13 @@ def get_enrichment_stats(db: Session = Depends(get_db)):
     none_count = status_breakdown.get("none", 0)
 
     # Top concepts — parse comma-separated concepts from enrichment_concepts column
-    enriched_products = db.query(models.RawProduct.enrichment_concepts).filter(
-        models.RawProduct.enrichment_concepts != None,
-        models.RawProduct.enrichment_concepts != ""
+    enriched_entities = db.query(models.RawEntity.enrichment_concepts).filter(
+        models.RawEntity.enrichment_concepts != None,
+        models.RawEntity.enrichment_concepts != ""
     ).all()
 
     concept_freq: dict = {}
-    for row in enriched_products:
+    for row in enriched_entities:
         if row[0]:
             for concept in row[0].split(","):
                 concept = concept.strip()
@@ -369,10 +730,10 @@ def get_enrichment_stats(db: Session = Depends(get_db)):
     top_concepts = sorted(concept_freq.items(), key=lambda x: x[1], reverse=True)[:20]
 
     # Citation statistics
-    citation_rows = db.query(models.RawProduct.enrichment_citation_count).filter(
-        models.RawProduct.enrichment_status == "completed",
-        models.RawProduct.enrichment_citation_count != None,
-        models.RawProduct.enrichment_citation_count > 0
+    citation_rows = db.query(models.RawEntity.enrichment_citation_count).filter(
+        models.RawEntity.enrichment_status == "completed",
+        models.RawEntity.enrichment_citation_count != None,
+        models.RawEntity.enrichment_citation_count > 0
     ).all()
     citation_values = [r[0] for r in citation_rows if r[0]]
 
@@ -395,7 +756,7 @@ def get_enrichment_stats(db: Session = Depends(get_db)):
             buckets["200+"] += 1
 
     return {
-        "total_products": total,
+        "total_entities": total,
         "enriched_count": enriched_count,
         "pending_count": pending_count,
         "failed_count": failed_count,
@@ -410,22 +771,20 @@ def get_enrichment_stats(db: Session = Depends(get_db)):
         },
     }
 
-from backend.analytics.montecarlo import simulate_citation_impact
-
-@app.get("/enrich/montecarlo/{product_id}")
-def get_montecarlo_prediction(product_id: int, db: Session = Depends(get_db)):
+@app.get("/enrich/montecarlo/{entity_id}")
+def get_montecarlo_prediction(entity_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     """
-    Phase 4: Preforms a stochastic Monte Carlo simulation on the future citation trajectory
-    of a single enriched product, provided the product has citations.
+    Phase 4: Performs a stochastic Monte Carlo simulation on the future citation trajectory
+    of a single enriched entity, provided the entity has citations.
     """
-    product = db.query(models.RawProduct).filter(models.RawProduct.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    entity = db.query(models.RawEntity).filter(models.RawEntity.id == entity_id).first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
         
-    if product.enrichment_status != "completed":
+    if entity.enrichment_status != "completed":
         raise HTTPException(status_code=400, detail="Cannot predict raw or unenriched data")
         
-    citations = product.enrichment_citation_count or 0
+    citations = entity.enrichment_citation_count or 0
     predictions = simulate_citation_impact(
         current_citations=citations, 
         simulation_years=5, 
@@ -434,119 +793,140 @@ def get_montecarlo_prediction(product_id: int, db: Session = Depends(get_db)):
     
     return predictions
 
-from thefuzz import process, fuzz
-
 @app.get("/disambiguate/{field}")
-def disambiguate_field(field: str, threshold: int = 80, db: Session = Depends(get_db)):
-    if field not in AUTHORITY_FIELDS:
-        raise HTTPException(status_code=400, detail=f"Field {field} not supported for disambiguation")
+def disambiguate_field(field: str, threshold: int = Query(default=80, ge=0, le=100), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
+    try:
+        groups = _build_disambig_groups(field, threshold, db)
+        return {"groups": groups, "total_groups": len(groups)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    groups = _build_disambig_groups(field, threshold, db)
-    return {"groups": groups, "total_groups": len(groups)}
+class AIResolveRequest(BaseModel):
+    field_name: str
+    variations: List[str]
+    api_key: Optional[str] = None
+
+@app.post("/disambiguate/ai-resolve")
+def ai_resolve_variations(payload: AIResolveRequest, _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    """
+    Sends a cluster of lexical variations to the LLM agent to figure out the canonical name 
+    and provide ontological reasoning.
+    """
+    try:
+        # Pass to the LLM Agent
+        resolution = resolve_canonical_name(
+            field_name=payload.field_name, 
+            variations=payload.variations,
+            api_key=payload.api_key
+        )
+        return resolution
+    except Exception as e:
+        logger.exception("LLM AI-resolve error for field '%s'", payload.field_name)
+        raise HTTPException(status_code=500, detail="AI resolution failed. Check server logs for details.")
 
 @app.get("/stats")
-def get_stats(db: Session = Depends(get_db)):
-    total_products = db.query(func.count(models.RawProduct.id)).scalar() or 0
+def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
+    total_entities = db.query(func.count(models.RawEntity.id)).scalar() or 0
 
-    unique_brands = db.query(func.count(func.distinct(models.RawProduct.brand_capitalized))).filter(
-        models.RawProduct.brand_capitalized != None
+    unique_brands = db.query(func.count(func.distinct(models.RawEntity.brand_capitalized))).filter(
+        models.RawEntity.brand_capitalized != None
     ).scalar() or 0
 
-    unique_models = db.query(func.count(func.distinct(models.RawProduct.model))).filter(
-        models.RawProduct.model != None
+    unique_models = db.query(func.count(func.distinct(models.RawEntity.model))).filter(
+        models.RawEntity.model != None
     ).scalar() or 0
 
-    unique_product_types = db.query(func.count(func.distinct(models.RawProduct.product_type))).filter(
-        models.RawProduct.product_type != None
+    unique_entity_types = db.query(func.count(func.distinct(models.RawEntity.entity_type))).filter(
+        models.RawEntity.entity_type != None
     ).scalar() or 0
 
     # Validation status breakdown
     validation_rows = db.query(
-        models.RawProduct.validation_status,
-        func.count(models.RawProduct.id)
-    ).group_by(models.RawProduct.validation_status).all()
+        models.RawEntity.validation_status,
+        func.count(models.RawEntity.id)
+    ).group_by(models.RawEntity.validation_status).all()
     validation_status = {row[0] or "pending": row[1] for row in validation_rows}
 
     # Identifier coverage
-    with_sku = db.query(func.count(models.RawProduct.id)).filter(
-        models.RawProduct.sku != None, models.RawProduct.sku != ""
+    with_sku = db.query(func.count(models.RawEntity.id)).filter(
+        models.RawEntity.sku != None, models.RawEntity.sku != ""
     ).scalar() or 0
-    with_barcode = db.query(func.count(models.RawProduct.id)).filter(
-        models.RawProduct.barcode != None, models.RawProduct.barcode != ""
+    with_barcode = db.query(func.count(models.RawEntity.id)).filter(
+        models.RawEntity.barcode != None, models.RawEntity.barcode != ""
     ).scalar() or 0
-    with_gtin = db.query(func.count(models.RawProduct.id)).filter(
-        models.RawProduct.gtin != None, models.RawProduct.gtin != ""
+    with_gtin = db.query(func.count(models.RawEntity.id)).filter(
+        models.RawEntity.gtin != None, models.RawEntity.gtin != ""
     ).scalar() or 0
 
     # Top brands (top 10)
     top_brands = db.query(
-        models.RawProduct.brand_capitalized,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.brand_capitalized,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.brand_capitalized != None
+        models.RawEntity.brand_capitalized != None
     ).group_by(
-        models.RawProduct.brand_capitalized
-    ).order_by(func.count(models.RawProduct.id).desc()).limit(10).all()
+        models.RawEntity.brand_capitalized
+    ).order_by(func.count(models.RawEntity.id).desc()).limit(10).all()
 
     # Product type distribution
     type_distribution = db.query(
-        models.RawProduct.product_type,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.entity_type,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.product_type != None
+        models.RawEntity.entity_type != None
     ).group_by(
-        models.RawProduct.product_type
-    ).order_by(func.count(models.RawProduct.id).desc()).limit(10).all()
+        models.RawEntity.entity_type
+    ).order_by(func.count(models.RawEntity.id).desc()).limit(10).all()
 
     # Status distribution
     status_distribution = db.query(
-        models.RawProduct.status,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.status,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.status != None
+        models.RawEntity.status != None
     ).group_by(
-        models.RawProduct.status
-    ).order_by(func.count(models.RawProduct.id).desc()).all()
+        models.RawEntity.status
+    ).order_by(func.count(models.RawEntity.id).desc()).all()
 
     # Classification distribution
     classification_distribution = db.query(
-        models.RawProduct.classification,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.classification,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.classification != None
+        models.RawEntity.classification != None
     ).group_by(
-        models.RawProduct.classification
-    ).order_by(func.count(models.RawProduct.id).desc()).all()
+        models.RawEntity.classification
+    ).order_by(func.count(models.RawEntity.id).desc()).all()
 
     
     # Variant statistics
-    products_with_variants = db.query(func.count(models.RawProduct.id)).filter(
-        models.RawProduct.variant != None,
-        models.RawProduct.variant != ""
+    products_with_variants = db.query(func.count(models.RawEntity.id)).filter(
+        models.RawEntity.variant != None,
+        models.RawEntity.variant != ""
     ).scalar() or 0
     
     # Count unique product names that have variants
     unique_products_with_variants = db.query(
-        func.count(func.distinct(models.RawProduct.product_name))
+        func.count(func.distinct(models.RawEntity.entity_name))
     ).filter(
-        models.RawProduct.variant != None,
-        models.RawProduct.variant != "",
-        models.RawProduct.product_name != None
+        models.RawEntity.variant != None,
+        models.RawEntity.variant != "",
+        models.RawEntity.entity_name != None
     ).scalar() or 0
 
     return {
-        "total_products": total_products,
+        "total_entities": total_entities,
         "unique_brands": unique_brands,
         "unique_models": unique_models,
-        "unique_product_types": unique_product_types,
-        "products_with_variants": products_with_variants,
-        "unique_products_with_variants": unique_products_with_variants,
+        "unique_entity_types": unique_entity_types,
+        "entities_with_variants": products_with_variants,
+        "unique_entities_with_variants": unique_products_with_variants,
         "validation_status": validation_status,
         "identifier_coverage": {
             "with_sku": with_sku,
             "with_barcode": with_barcode,
             "with_gtin": with_gtin,
-            "total": total_products,
+            "total": total_entities,
         },
         "top_brands": [{"name": b[0], "count": b[1]} for b in top_brands],
         "type_distribution": [{"name": t[0], "count": t[1]} for t in type_distribution],
@@ -556,44 +936,44 @@ def get_stats(db: Session = Depends(get_db)):
 
 
 @app.get("/brands")
-def get_all_brands(db: Session = Depends(get_db)):
+def get_all_brands(limit: int = Query(default=200, ge=1, le=1000), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     brands = db.query(
-        models.RawProduct.brand_capitalized,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.brand_capitalized,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.brand_capitalized != None
+        models.RawEntity.brand_capitalized != None
     ).group_by(
-        models.RawProduct.brand_capitalized
-    ).order_by(func.count(models.RawProduct.id).desc()).all()
-    
+        models.RawEntity.brand_capitalized
+    ).order_by(func.count(models.RawEntity.id).desc()).limit(limit).all()
+
     return [{"name": b[0], "count": b[1]} for b in brands]
 
 
 @app.get("/product-types")
-def get_all_product_types(db: Session = Depends(get_db)):
+def get_all_entity_types(limit: int = Query(default=200, ge=1, le=1000), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     types = db.query(
-        models.RawProduct.product_type,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.entity_type,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.product_type != None
+        models.RawEntity.entity_type != None
     ).group_by(
-        models.RawProduct.product_type
-    ).order_by(func.count(models.RawProduct.id).desc()).all()
-    
+        models.RawEntity.entity_type
+    ).order_by(func.count(models.RawEntity.id).desc()).limit(limit).all()
+
     return [{"name": t[0], "count": t[1]} for t in types]
 
 
 @app.get("/classifications")
-def get_all_classifications(db: Session = Depends(get_db)):
+def get_all_classifications(limit: int = Query(default=200, ge=1, le=1000), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     classes = db.query(
-        models.RawProduct.classification,
-        func.count(models.RawProduct.id).label("count")
+        models.RawEntity.classification,
+        func.count(models.RawEntity.id).label("count")
     ).filter(
-        models.RawProduct.classification != None
+        models.RawEntity.classification != None
     ).group_by(
-        models.RawProduct.classification
-    ).order_by(func.count(models.RawProduct.id).desc()).all()
-    
+        models.RawEntity.classification
+    ).order_by(func.count(models.RawEntity.id).desc()).limit(limit).all()
+
     return [{"name": c[0], "count": c[1]} for c in classes]
 
 
@@ -604,28 +984,33 @@ EXPORT_COLUMN_MAPPING = {v: k.strip() for k, v in COLUMN_MAPPING.items()}
 EXPORT_COLUMN_MAPPING.update({
     "equipment": "EQUIPAMIENTO",
     "gtin_empty_reason_typo": "Motivo GTIN vacio",
-    "product_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
+    "entity_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
 })
 
 @app.get("/export")
-def export_products(search: str = None, db: Session = Depends(get_db)):
-    query = db.query(models.RawProduct)
+def export_entities(
+    search: str = None,
+    limit: int = Query(default=5000, ge=1, le=50000),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    query = db.query(models.RawEntity)
 
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
             or_(
-                models.RawProduct.product_name.ilike(search_filter),
-                models.RawProduct.brand_capitalized.ilike(search_filter),
-                models.RawProduct.model.ilike(search_filter),
-                models.RawProduct.sku.ilike(search_filter)
+                models.RawEntity.entity_name.ilike(search_filter),
+                models.RawEntity.brand_capitalized.ilike(search_filter),
+                models.RawEntity.model.ilike(search_filter),
+                models.RawEntity.sku.ilike(search_filter)
             )
         )
 
-    products = query.all()
+    entities = query.limit(limit).all()
 
     rows = []
-    for p in products:
+    for p in entities:
         row = {}
         for model_field, excel_col in EXPORT_COLUMN_MAPPING.items():
             row[excel_col] = getattr(p, model_field, None)
@@ -645,18 +1030,34 @@ def export_products(search: str = None, db: Session = Depends(get_db)):
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=products_export.xlsx"}
+        headers={"Content-Disposition": "attachment; filename=entities_export.xlsx"}
     )
 
 
-AUTHORITY_FIELDS = ["brand_capitalized", "product_name", "model", "product_type"]
+# We are removing AUTHORITY_FIELDS entirely for agnosticism.
+
+_FIELD_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 def _build_disambig_groups(field: str, threshold: int, db: Session):
     """Shared disambiguation logic reused by /disambiguate and /authority."""
-    column = getattr(models.RawProduct, field)
-    values = db.query(column).distinct().filter(column != None).all()
-    values = [v[0] for v in values if v[0]]
+    if not _FIELD_RE.match(field):
+        raise ValueError(
+            f"Invalid field name '{field}'. Must be 1–64 lowercase alphanumeric/underscore characters starting with a letter."
+        )
+    if hasattr(models.RawEntity, field):
+        column = getattr(models.RawEntity, field)
+        entries = db.query(column).distinct().filter(column != None).all()
+        values = [v[0] for v in entries if v[0] and str(v[0]).strip()]
+    else:
+        # Fallback to normalized JSON data using SQLite JSON extraction function
+        json_col = func.json_extract(models.RawEntity.normalized_json, f"$.{field}")
+        entries = db.query(json_col).distinct().filter(
+            models.RawEntity.normalized_json != None,
+            json_col != None
+        ).all()
+        values = [v[0] for v in entries if v[0] and str(v[0]).strip()]
+
     values.sort(key=len, reverse=True)
 
     groups = []
@@ -683,15 +1084,21 @@ def _build_disambig_groups(field: str, threshold: int, db: Session):
 
 
 @app.get("/rules", response_model=List[schemas.Rule])
-def get_rules(field_name: str = None, db: Session = Depends(get_db)):
+def get_rules(
+    field_name: str = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
     query = db.query(models.NormalizationRule)
     if field_name:
         query = query.filter(models.NormalizationRule.field_name == field_name)
-    return query.order_by(models.NormalizationRule.id.desc()).all()
+    return query.order_by(models.NormalizationRule.id.desc()).offset(skip).limit(limit).all()
 
 
-@app.post("/rules/bulk")
-def create_rules_bulk(payload: schemas.BulkRuleCreate, db: Session = Depends(get_db)):
+@app.post("/rules/bulk", status_code=201)
+def create_rules_bulk(payload: schemas.BulkRuleCreate, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     # Delete existing rules for the same field + canonical so we can re-save cleanly
     for var in payload.variations:
         if var == payload.canonical_value:
@@ -713,7 +1120,7 @@ def create_rules_bulk(payload: schemas.BulkRuleCreate, db: Session = Depends(get
 
 
 @app.delete("/rules/{rule_id}")
-def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_rule(rule_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     rule = db.query(models.NormalizationRule).filter(models.NormalizationRule.id == rule_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -723,7 +1130,7 @@ def delete_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/rules/apply")
-def apply_rules(field_name: str = None, db: Session = Depends(get_db)):
+def apply_rules(field_name: str = None, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     query = db.query(models.NormalizationRule)
     if field_name:
         query = query.filter(models.NormalizationRule.field_name == field_name)
@@ -731,29 +1138,49 @@ def apply_rules(field_name: str = None, db: Session = Depends(get_db)):
 
     total_updated = 0
     for rule in rules:
-        if rule.field_name not in AUTHORITY_FIELDS:
-            continue
-        column = getattr(models.RawProduct, rule.field_name)
+        if hasattr(models.RawEntity, rule.field_name):
+            column = getattr(models.RawEntity, rule.field_name)
 
-        if rule.is_regex:
-            products = db.query(models.RawProduct).filter(column != None).all()
-            for p in products:
-                original = getattr(p, rule.field_name)
-                if original:
-                    try:
-                        new_val = re.sub(rule.original_value, rule.normalized_value, original)
-                        if new_val != original:
-                            setattr(p, rule.field_name, new_val)
-                            total_updated += 1
-                    except re.error:
-                        pass
+            if rule.is_regex:
+                entities = db.query(models.RawEntity).filter(column != None).all()
+                for p in entities:
+                    original = getattr(p, rule.field_name)
+                    if original:
+                        try:
+                            new_val = re.sub(rule.original_value, rule.normalized_value, original)
+                            if new_val != original:
+                                setattr(p, rule.field_name, new_val)
+                                total_updated += 1
+                        except re.error:
+                            pass
+            else:
+                result = db.execute(
+                    update(models.RawEntity)
+                    .where(column == rule.original_value)
+                    .values({rule.field_name: rule.normalized_value})
+                )
+                total_updated += result.rowcount
         else:
-            result = db.execute(
-                update(models.RawProduct)
-                .where(column == rule.original_value)
-                .values({rule.field_name: rule.normalized_value})
-            )
-            total_updated += result.rowcount
+            # Updating JSON data inside normalized_json
+            entities = db.query(models.RawEntity).filter(models.RawEntity.normalized_json != None).all()
+            for entity in entities:
+                try:
+                    data = json.loads(entity.normalized_json or '{}')
+                    original = data.get(rule.field_name)
+                    if original:
+                        if rule.is_regex:
+                            new_val = re.sub(rule.original_value, rule.normalized_value, original)
+                        else:
+                            new_val = rule.normalized_value if original == rule.original_value else original
+                            
+                        if new_val != original:
+                            data[rule.field_name] = new_val
+                            entity.normalized_json = json.dumps(data)
+                            db.add(entity)
+                            total_updated += 1
+                except Exception as exc:
+                    logger.warning("Rule application skipped for entity %s: %s", entity.id, exc)
+                    continue
 
     db.commit()
     return {
@@ -764,11 +1191,11 @@ def apply_rules(field_name: str = None, db: Session = Depends(get_db)):
 
 
 @app.get("/authority/{field}")
-def get_authority_view(field: str, threshold: int = 80, db: Session = Depends(get_db)):
-    if field not in AUTHORITY_FIELDS:
-        raise HTTPException(status_code=400, detail=f"Field '{field}' not supported")
-
-    groups = _build_disambig_groups(field, threshold, db)
+def get_authority_view(field: str, threshold: int = Query(default=80, ge=0, le=100), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
+    try:
+        groups = _build_disambig_groups(field, threshold, db)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Fetch existing rules for this field
     rules = db.query(models.NormalizationRule).filter(
@@ -809,7 +1236,7 @@ def get_authority_view(field: str, threshold: int = 80, db: Session = Depends(ge
 
 HARMONIZATION_STEPS = [
     {"step_id": "consolidate_brands",   "name": "Consolidate Brand Columns",          "description": "Merge brand_lower into brand_capitalized when empty and apply brand normalization rules.", "order": 1},
-    {"step_id": "clean_product_names",  "name": "Clean Product Names",                "description": "Remove double spaces, trim whitespace, and normalize special characters.",                "order": 2},
+    {"step_id": "clean_entity_names",  "name": "Clean Product Names",                "description": "Remove double spaces, trim whitespace, and normalize special characters.",                "order": 2},
     {"step_id": "standardize_volumes",  "name": "Standardize Volume/Unit Variants",   "description": "Normalize volume formats (250ML → 250 mL, 1L → 1 L, 500gr → 500 g).",                  "order": 3},
     {"step_id": "consolidate_gtin",     "name": "Consolidate GTIN Columns",           "description": "Merge 4 product code columns and 7 GTIN reason fields into single authoritative values.","order": 4},
     {"step_id": "fix_export_typos",     "name": "Fix Export Column Name Typos",       "description": "Correct EQUIMAPIENTO → EQUIPAMIENTO, PRODRUCTO → PRODUCTO in export headers.",           "order": 5},
@@ -828,13 +1255,19 @@ VOLUME_PATTERNS = [
 EXPORT_COLUMN_CORRECTIONS = {
     "equipment": "EQUIPAMIENTO",
     "gtin_empty_reason_typo": "Motivo GTIN vacio",
-    "product_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
+    "entity_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
 }
+
+
+_PREVIEW_ROW_CAP = 10_000  # Max rows examined during preview to avoid OOM
 
 
 def _step_consolidate_brands(db: Session, preview_only: bool):
     changes = []
-    products = db.query(models.RawProduct).all()
+    q = db.query(models.RawEntity)
+    if preview_only:
+        q = q.limit(_PREVIEW_ROW_CAP)
+    entities = q.all()
 
     # Load existing brand normalization rules
     brand_rules = db.query(models.NormalizationRule).filter(
@@ -843,7 +1276,7 @@ def _step_consolidate_brands(db: Session, preview_only: bool):
     ).all()
     brand_map = {r.original_value: r.normalized_value for r in brand_rules}
 
-    for p in products:
+    for p in entities:
         new_brand = p.brand_capitalized
 
         if not new_brand or not new_brand.strip():
@@ -873,14 +1306,15 @@ def _step_consolidate_brands(db: Session, preview_only: bool):
     return changes
 
 
-def _step_clean_product_names(db: Session, preview_only: bool):
+def _step_clean_entity_names(db: Session, preview_only: bool):
     changes = []
-    products = db.query(models.RawProduct).filter(
-        models.RawProduct.product_name != None
-    ).all()
+    q = db.query(models.RawEntity).filter(models.RawEntity.entity_name != None)
+    if preview_only:
+        q = q.limit(_PREVIEW_ROW_CAP)
+    entities = q.all()
 
-    for p in products:
-        original = p.product_name
+    for p in entities:
+        original = p.entity_name
         if not original:
             continue
 
@@ -893,12 +1327,12 @@ def _step_clean_product_names(db: Session, preview_only: bool):
         if cleaned != original:
             changes.append({
                 "record_id": p.id,
-                "field": "product_name",
+                "field": "entity_name",
                 "old_value": original,
                 "new_value": cleaned,
             })
             if not preview_only:
-                p.product_name = cleaned
+                p.entity_name = cleaned
 
     if not preview_only:
         db.commit()
@@ -907,7 +1341,7 @@ def _step_clean_product_names(db: Session, preview_only: bool):
 
 def _step_standardize_volumes(db: Session, preview_only: bool):
     changes = []
-    target_fields = ["product_name", "measure"]
+    target_fields = ["entity_name", "measure"]
 
     # Load regex normalization rules
     regex_rules = db.query(models.NormalizationRule).filter(
@@ -915,10 +1349,13 @@ def _step_standardize_volumes(db: Session, preview_only: bool):
     ).all()
 
     for field_name in target_fields:
-        column = getattr(models.RawProduct, field_name)
-        products = db.query(models.RawProduct).filter(column != None).all()
+        column = getattr(models.RawEntity, field_name)
+        q = db.query(models.RawEntity).filter(column != None)
+        if preview_only:
+            q = q.limit(_PREVIEW_ROW_CAP)
+        entities = q.all()
 
-        for p in products:
+        for p in entities:
             original = getattr(p, field_name)
             if not original:
                 continue
@@ -951,25 +1388,28 @@ def _step_standardize_volumes(db: Session, preview_only: bool):
 
 def _step_consolidate_gtin(db: Session, preview_only: bool):
     changes = []
-    products = db.query(models.RawProduct).all()
+    q = db.query(models.RawEntity)
+    if preview_only:
+        q = q.limit(_PREVIEW_ROW_CAP)
+    entities = q.all()
 
     code_fields = [
-        "product_code_universal_1",
-        "product_code_universal_2",
-        "product_code_universal_3",
-        "product_code_universal_4",
+        "entity_code_universal_1",
+        "entity_code_universal_2",
+        "entity_code_universal_3",
+        "entity_code_universal_4",
     ]
 
     reason_fields = [
         "gtin_empty_reason_1",
         "gtin_empty_reason_2",
         "gtin_empty_reason_3",
-        "gtin_product_reason",
+        "gtin_entity_reason",
         "gtin_reason_lower",
         "gtin_empty_reason_typo",
     ]
 
-    for p in products:
+    for p in entities:
         # Consolidate product codes into gtin
         current_gtin = p.gtin
         if not current_gtin or not current_gtin.strip():
@@ -1025,7 +1465,7 @@ def _step_fix_export_typos(db: Session, preview_only: bool):
 
 STEP_FUNCTIONS = {
     "consolidate_brands": _step_consolidate_brands,
-    "clean_product_names": _step_clean_product_names,
+    "clean_entity_names": _step_clean_entity_names,
     "standardize_volumes": _step_standardize_volumes,
     "consolidate_gtin": _step_consolidate_gtin,
     "fix_export_typos": _step_fix_export_typos,
@@ -1033,8 +1473,8 @@ STEP_FUNCTIONS = {
 
 
 @app.get("/harmonization/steps")
-def get_harmonization_steps(db: Session = Depends(get_db)):
-    total_products = db.query(func.count(models.RawProduct.id)).scalar() or 0
+def get_harmonization_steps(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
+    total_entities = db.query(func.count(models.RawEntity.id)).scalar() or 0
 
     steps_with_status = []
     for step in HARMONIZATION_STEPS:
@@ -1049,11 +1489,11 @@ def get_harmonization_steps(db: Session = Depends(get_db)):
             "last_records_updated": last_log.records_updated if last_log else None,
         })
 
-    return {"steps": steps_with_status, "total_products": total_products}
+    return {"steps": steps_with_status, "total_entities": total_entities}
 
 
 @app.post("/harmonization/preview/{step_id}")
-def preview_harmonization_step(step_id: str, db: Session = Depends(get_db)):
+def preview_harmonization_step(step_id: str, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     if step_id not in STEP_FUNCTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown step: {step_id}")
 
@@ -1071,7 +1511,7 @@ def preview_harmonization_step(step_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/harmonization/apply/{step_id}")
-def apply_harmonization_step(step_id: str, db: Session = Depends(get_db)):
+def apply_harmonization_step(step_id: str, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     if step_id not in STEP_FUNCTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown step: {step_id}")
 
@@ -1084,7 +1524,7 @@ def apply_harmonization_step(step_id: str, db: Session = Depends(get_db)):
         step_name=step_def["name"],
         records_updated=len(changes),
         fields_modified=json.dumps(fields_modified),
-        executed_at=datetime.utcnow(),
+        executed_at=datetime.now(timezone.utc),
         details=json.dumps({"sample": changes[:20]}),
         reverted=False,
     )
@@ -1113,7 +1553,7 @@ def apply_harmonization_step(step_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/harmonization/apply-all")
-def apply_all_harmonization_steps(db: Session = Depends(get_db)):
+def apply_all_harmonization_steps(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     results = []
     for step in HARMONIZATION_STEPS:
         step_id = step["step_id"]
@@ -1125,7 +1565,7 @@ def apply_all_harmonization_steps(db: Session = Depends(get_db)):
             step_name=step["name"],
             records_updated=len(changes),
             fields_modified=json.dumps(fields_modified),
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(timezone.utc),
             reverted=False,
         )
         db.add(log_entry)
@@ -1153,7 +1593,7 @@ def apply_all_harmonization_steps(db: Session = Depends(get_db)):
 
 
 @app.get("/harmonization/logs")
-def get_harmonization_logs(db: Session = Depends(get_db)):
+def get_harmonization_logs(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     logs = db.query(models.HarmonizationLog).order_by(
         models.HarmonizationLog.id.desc()
     ).limit(50).all()
@@ -1170,7 +1610,7 @@ def get_harmonization_logs(db: Session = Depends(get_db)):
 
 
 @app.post("/harmonization/undo/{log_id}")
-def undo_harmonization(log_id: int, db: Session = Depends(get_db)):
+def undo_harmonization(log_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     log_entry = db.query(models.HarmonizationLog).filter(
         models.HarmonizationLog.id == log_id
     ).first()
@@ -1189,11 +1629,11 @@ def undo_harmonization(log_id: int, db: Session = Depends(get_db)):
 
     restored = 0
     for cr in change_records:
-        product = db.query(models.RawProduct).filter(
-            models.RawProduct.id == cr.record_id
+        entity = db.query(models.RawEntity).filter(
+            models.RawEntity.id == cr.record_id
         ).first()
-        if product:
-            setattr(product, cr.field, cr.old_value)
+        if entity:
+            setattr(entity, cr.field, cr.old_value)
             restored += 1
 
     log_entry.reverted = True
@@ -1209,7 +1649,7 @@ def undo_harmonization(log_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/harmonization/redo/{log_id}")
-def redo_harmonization(log_id: int, db: Session = Depends(get_db)):
+def redo_harmonization(log_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin", "editor"))):
     log_entry = db.query(models.HarmonizationLog).filter(
         models.HarmonizationLog.id == log_id
     ).first()
@@ -1224,11 +1664,11 @@ def redo_harmonization(log_id: int, db: Session = Depends(get_db)):
 
     reapplied = 0
     for cr in change_records:
-        product = db.query(models.RawProduct).filter(
-            models.RawProduct.id == cr.record_id
+        entity = db.query(models.RawEntity).filter(
+            models.RawEntity.id == cr.record_id
         ).first()
-        if product:
-            setattr(product, cr.field, cr.new_value)
+        if entity:
+            setattr(entity, cr.field, cr.new_value)
             reapplied += 1
 
     log_entry.reverted = False
@@ -1245,11 +1685,14 @@ def redo_harmonization(log_id: int, db: Session = Depends(get_db)):
 
 # ── Store Integration Endpoints ─────────────────────────────────────────
 
-SUPPORTED_PLATFORMS = ["woocommerce", "shopify", "bsale", "custom"]
-
 @app.get("/stores")
-def get_all_stores(db: Session = Depends(get_db)):
-    stores = db.query(models.StoreConnection).order_by(models.StoreConnection.id.desc()).all()
+def get_all_stores(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin")),
+):
+    stores = db.query(models.StoreConnection).order_by(models.StoreConnection.id.desc()).offset(skip).limit(limit).all()
     result = []
     for s in stores:
         result.append({
@@ -1260,7 +1703,7 @@ def get_all_stores(db: Session = Depends(get_db)):
             "is_active": s.is_active,
             "last_sync_at": str(s.last_sync_at) if s.last_sync_at else None,
             "created_at": str(s.created_at) if s.created_at else None,
-            "product_count": s.product_count or 0,
+            "entity_count": s.entity_count or 0,
             "sync_direction": s.sync_direction or "bidirectional",
             "notes": s.notes,
         })
@@ -1268,7 +1711,7 @@ def get_all_stores(db: Session = Depends(get_db)):
 
 
 @app.get("/stores/{store_id}")
-def get_store(store_id: int, db: Session = Depends(get_db)):
+def get_store(store_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store connection not found")
@@ -1280,7 +1723,7 @@ def get_store(store_id: int, db: Session = Depends(get_db)):
         "is_active": store.is_active,
         "last_sync_at": str(store.last_sync_at) if store.last_sync_at else None,
         "created_at": str(store.created_at) if store.created_at else None,
-        "product_count": store.product_count or 0,
+        "entity_count": store.entity_count or 0,
         "sync_direction": store.sync_direction or "bidirectional",
         "notes": store.notes,
         "has_api_key": bool(store.api_key),
@@ -1289,24 +1732,25 @@ def get_store(store_id: int, db: Session = Depends(get_db)):
     }
 
 
-@app.post("/stores")
-def create_store(payload: schemas.StoreConnectionCreate, db: Session = Depends(get_db)):
-    if payload.platform not in SUPPORTED_PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Platform '{payload.platform}' not supported. Use: {SUPPORTED_PLATFORMS}")
-
+@app.post("/stores", status_code=201)
+def create_store(
+    payload: schemas.StoreConnectionCreate,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin")),
+):
     store = models.StoreConnection(
-        name=payload.name,
+        name=payload.name.strip(),
         platform=payload.platform,
         base_url=payload.base_url.rstrip("/"),
-        api_key=payload.api_key,
-        api_secret=payload.api_secret,
-        access_token=payload.access_token,
+        api_key=encrypt(payload.api_key),
+        api_secret=encrypt(payload.api_secret),
+        access_token=encrypt(payload.access_token),
         custom_headers=payload.custom_headers,
         sync_direction=payload.sync_direction,
         notes=payload.notes,
         is_active=True,
-        created_at=datetime.utcnow(),
-        product_count=0,
+        created_at=datetime.now(timezone.utc),
+        entity_count=0,
     )
     db.add(store)
     db.commit()
@@ -1320,14 +1764,26 @@ def create_store(payload: schemas.StoreConnectionCreate, db: Session = Depends(g
 
 
 @app.put("/stores/{store_id}")
-def update_store(store_id: int, payload: schemas.StoreConnectionUpdate, db: Session = Depends(get_db)):
+def update_store(
+    store_id: int = Path(..., ge=1),
+    payload: schemas.StoreConnectionUpdate = ...,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin")),
+):
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store connection not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "name" in update_data and update_data["name"]:
+        update_data["name"] = update_data["name"].strip()
     if "base_url" in update_data and update_data["base_url"]:
         update_data["base_url"] = update_data["base_url"].rstrip("/")
+
+    # Encrypt credential fields before persisting
+    for cred_field in ("api_key", "api_secret", "access_token"):
+        if cred_field in update_data and update_data[cred_field] is not None:
+            update_data[cred_field] = encrypt(update_data[cred_field])
 
     for field, value in update_data.items():
         setattr(store, field, value)
@@ -1338,7 +1794,7 @@ def update_store(store_id: int, payload: schemas.StoreConnectionUpdate, db: Sess
 
 
 @app.delete("/stores/{store_id}")
-def delete_store(store_id: int, db: Session = Depends(get_db)):
+def delete_store(store_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store connection not found")
@@ -1352,7 +1808,7 @@ def delete_store(store_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/stores/{store_id}/toggle")
-def toggle_store(store_id: int, db: Session = Depends(get_db)):
+def toggle_store(store_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store connection not found")
@@ -1362,7 +1818,7 @@ def toggle_store(store_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/stores/stats/summary")
-def get_stores_summary(db: Session = Depends(get_db)):
+def get_stores_summary(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     total_stores = db.query(func.count(models.StoreConnection.id)).scalar() or 0
     active_stores = db.query(func.count(models.StoreConnection.id)).filter(
         models.StoreConnection.is_active == True
@@ -1384,23 +1840,21 @@ def get_stores_summary(db: Session = Depends(get_db)):
 
 # ── Sync Engine Endpoints ───────────────────────────────────────────────
 
-from backend.adapters import get_adapter
-
 def _get_store_adapter(store: models.StoreConnection):
-    """Build adapter from store connection model."""
+    """Build adapter from store connection model, decrypting credentials."""
     config = {
         "platform": store.platform,
         "base_url": store.base_url,
-        "api_key": store.api_key,
-        "api_secret": store.api_secret,
-        "access_token": store.access_token,
+        "api_key": decrypt(store.api_key),
+        "api_secret": decrypt(store.api_secret),
+        "access_token": decrypt(store.access_token),
         "custom_headers": store.custom_headers,
     }
     return get_adapter(store.platform, config)
 
 
 @app.post("/stores/{store_id}/test")
-def test_store_connection(store_id: int, db: Session = Depends(get_db)):
+def test_store_connection(store_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
@@ -1412,7 +1866,7 @@ def test_store_connection(store_id: int, db: Session = Depends(get_db)):
             "success": result.success,
             "message": result.message,
             "store_name": result.store_name,
-            "product_count": result.product_count,
+            "entity_count": result.entity_count,
             "api_version": result.api_version,
         }
     except Exception as e:
@@ -1420,8 +1874,8 @@ def test_store_connection(store_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/stores/{store_id}/pull")
-def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, db: Session = Depends(get_db)):
-    """Pull products from remote store and create queue items for human review."""
+def pull_entities_from_store(store_id: int = Path(..., ge=1), page: int = Query(default=1, ge=1), per_page: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
+    """Pull entities from remote store and create queue items for human review."""
     store = db.query(models.StoreConnection).filter(models.StoreConnection.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
@@ -1430,12 +1884,12 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
 
     try:
         adapter = _get_store_adapter(store)
-        remote_products = adapter.fetch_products(page=page, per_page=per_page)
+        remote_entities = adapter.fetch_entities(page=page, per_page=per_page)
     except Exception as e:
         # Log the error
         db.add(models.SyncLog(
             store_id=store_id, action="pull", status="error",
-            records_affected=0, details=str(e), executed_at=datetime.utcnow()
+            records_affected=0, details=str(e), executed_at=datetime.now(timezone.utc)
         ))
         db.commit()
         raise HTTPException(status_code=502, detail=f"Failed to fetch from store: {e}")
@@ -1444,7 +1898,7 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
     new_queue_items = 0
     skipped = 0
 
-    for rp in remote_products:
+    for rp in remote_entities:
         if not rp.canonical_url:
             skipped += 1
             continue
@@ -1459,8 +1913,8 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
             # Create new mapping
             mapping = models.StoreSyncMapping(
                 store_id=store_id,
-                local_product_id=None,
-                remote_product_id=rp.remote_id,
+                local_entity_id=None,
+                remote_entity_id=rp.remote_id,
                 canonical_url=rp.canonical_url,
                 remote_sku=rp.sku,
                 remote_name=rp.name,
@@ -1469,7 +1923,7 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
                 remote_status=rp.status,
                 remote_data_json=json.dumps(rp.raw_data, default=str, ensure_ascii=False) if rp.raw_data else None,
                 sync_status="pending",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             db.add(mapping)
             db.flush()
@@ -1480,13 +1934,13 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
                 store_id=store_id,
                 mapping_id=mapping.id,
                 direction="pull",
-                product_name=rp.name,
+                entity_name=rp.name,
                 canonical_url=rp.canonical_url,
-                field="new_product",
+                field="new_entity",
                 local_value=None,
                 remote_value=rp.name,
                 status="pending",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             ))
             new_queue_items += 1
         else:
@@ -1515,13 +1969,13 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
                         store_id=store_id,
                         mapping_id=existing.id,
                         direction="pull",
-                        product_name=rp.name,
+                        entity_name=rp.name,
                         canonical_url=rp.canonical_url,
                         field=field,
                         local_value=old_val,
                         remote_value=new_val,
                         status="pending",
-                        created_at=datetime.utcnow(),
+                        created_at=datetime.now(timezone.utc),
                     ))
                     new_queue_items += 1
 
@@ -1532,29 +1986,29 @@ def pull_products_from_store(store_id: int, page: int = 1, per_page: int = 50, d
             existing.remote_sku = rp.sku or existing.remote_sku
             existing.remote_status = rp.status or existing.remote_status
             existing.remote_data_json = json.dumps(rp.raw_data, default=str, ensure_ascii=False) if rp.raw_data else existing.remote_data_json
-            existing.last_synced_at = datetime.utcnow()
+            existing.last_synced_at = datetime.now(timezone.utc)
 
     # Log the sync
-    store.last_sync_at = datetime.utcnow()
+    store.last_sync_at = datetime.now(timezone.utc)
     db.add(models.SyncLog(
         store_id=store_id, action="pull", status="success",
         records_affected=new_mappings + new_queue_items,
         details=json.dumps({"new_mappings": new_mappings, "queue_items": new_queue_items, "skipped": skipped}),
-        executed_at=datetime.utcnow()
+        executed_at=datetime.now(timezone.utc)
     ))
     db.commit()
 
     return {
-        "message": f"Pull completed: {len(remote_products)} products fetched",
+        "message": f"Pull completed: {len(remote_entities)} entities fetched",
         "new_mappings": new_mappings,
         "new_queue_items": new_queue_items,
         "skipped": skipped,
-        "total_fetched": len(remote_products),
+        "total_fetched": len(remote_entities),
     }
 
 
 @app.get("/stores/{store_id}/mappings")
-def get_store_mappings(store_id: int, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+def get_store_mappings(store_id: int = Path(..., ge=1), skip: int = 0, limit: int = 50, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     total = db.query(func.count(models.StoreSyncMapping.id)).filter(
         models.StoreSyncMapping.store_id == store_id
     ).scalar() or 0
@@ -1567,8 +2021,8 @@ def get_store_mappings(store_id: int, skip: int = 0, limit: int = 50, db: Sessio
         "total": total,
         "mappings": [{
             "id": m.id,
-            "local_product_id": m.local_product_id,
-            "remote_product_id": m.remote_product_id,
+            "local_entity_id": m.local_entity_id,
+            "remote_entity_id": m.remote_entity_id,
             "canonical_url": m.canonical_url,
             "remote_sku": m.remote_sku,
             "remote_name": m.remote_name,
@@ -1582,7 +2036,7 @@ def get_store_mappings(store_id: int, skip: int = 0, limit: int = 50, db: Sessio
 
 
 @app.get("/stores/{store_id}/queue")
-def get_store_queue(store_id: int, status: str = "pending", skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+def get_store_queue(store_id: int = Path(..., ge=1), status: str = "pending", skip: int = 0, limit: int = 50, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     query = db.query(models.SyncQueueItem).filter(
         models.SyncQueueItem.store_id == store_id,
     )
@@ -1598,7 +2052,7 @@ def get_store_queue(store_id: int, status: str = "pending", skip: int = 0, limit
             "id": q.id,
             "mapping_id": q.mapping_id,
             "direction": q.direction,
-            "product_name": q.product_name,
+            "entity_name": q.entity_name,
             "canonical_url": q.canonical_url,
             "field": q.field,
             "local_value": q.local_value,
@@ -1611,55 +2065,64 @@ def get_store_queue(store_id: int, status: str = "pending", skip: int = 0, limit
 
 
 @app.post("/stores/queue/{item_id}/approve")
-def approve_queue_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.SyncQueueItem).filter(models.SyncQueueItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Queue item not found")
-    if item.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Item is already {item.status}")
-    item.status = "approved"
-    item.resolved_at = datetime.utcnow()
+def approve_queue_item(item_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
+    # Optimistic update: only succeeds if the item is still pending (avoids TOCTOU)
+    now = datetime.now(timezone.utc)
+    rows = db.query(models.SyncQueueItem).filter(
+        models.SyncQueueItem.id == item_id,
+        models.SyncQueueItem.status == "pending",
+    ).update({"status": "approved", "resolved_at": now})
+    if rows == 0:
+        # Either not found or no longer pending — distinguish for a clear response
+        item = db.query(models.SyncQueueItem).filter(models.SyncQueueItem.id == item_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Queue item not found")
+        raise HTTPException(status_code=409, detail=f"Item is already {item.status}")
     db.commit()
     return {"message": "Item approved", "id": item_id, "status": "approved"}
 
 
 @app.post("/stores/queue/{item_id}/reject")
-def reject_queue_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.SyncQueueItem).filter(models.SyncQueueItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Queue item not found")
-    if item.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Item is already {item.status}")
-    item.status = "rejected"
-    item.resolved_at = datetime.utcnow()
+def reject_queue_item(item_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
+    # Optimistic update: only succeeds if the item is still pending (avoids TOCTOU)
+    now = datetime.now(timezone.utc)
+    rows = db.query(models.SyncQueueItem).filter(
+        models.SyncQueueItem.id == item_id,
+        models.SyncQueueItem.status == "pending",
+    ).update({"status": "rejected", "resolved_at": now})
+    if rows == 0:
+        item = db.query(models.SyncQueueItem).filter(models.SyncQueueItem.id == item_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Queue item not found")
+        raise HTTPException(status_code=409, detail=f"Item is already {item.status}")
     db.commit()
     return {"message": "Item rejected", "id": item_id, "status": "rejected"}
 
 
 @app.post("/stores/queue/bulk-approve")
-def bulk_approve_queue(store_id: int, db: Session = Depends(get_db)):
+def bulk_approve_queue(store_id: int = Query(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     """Approve all pending queue items for a store."""
     updated = db.query(models.SyncQueueItem).filter(
         models.SyncQueueItem.store_id == store_id,
         models.SyncQueueItem.status == "pending",
-    ).update({"status": "approved", "resolved_at": datetime.utcnow()})
+    ).update({"status": "approved", "resolved_at": datetime.now(timezone.utc)})
     db.commit()
     return {"message": f"{updated} items approved", "count": updated}
 
 
 @app.post("/stores/queue/bulk-reject")
-def bulk_reject_queue(store_id: int, db: Session = Depends(get_db)):
+def bulk_reject_queue(store_id: int = Query(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     """Reject all pending queue items for a store."""
     updated = db.query(models.SyncQueueItem).filter(
         models.SyncQueueItem.store_id == store_id,
         models.SyncQueueItem.status == "pending",
-    ).update({"status": "rejected", "resolved_at": datetime.utcnow()})
+    ).update({"status": "rejected", "resolved_at": datetime.now(timezone.utc)})
     db.commit()
     return {"message": f"{updated} items rejected", "count": updated}
 
 
 @app.get("/stores/{store_id}/logs")
-def get_store_logs(store_id: int, skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+def get_store_logs(store_id: int = Path(..., ge=1), skip: int = 0, limit: int = 20, db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     logs = db.query(models.SyncLog).filter(
         models.SyncLog.store_id == store_id
     ).order_by(models.SyncLog.id.desc()).offset(skip).limit(limit).all()
@@ -1675,73 +2138,107 @@ def get_store_logs(store_id: int, skip: int = 0, limit: int = 20, db: Session = 
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok"}
+def health_check(db: Session = Depends(get_db)):
+    """Liveness + DB connectivity probe."""
+    try:
+        db.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception:
+        db_status = "error"
+    status = "ok" if db_status == "ok" else "degraded"
+    return {"status": status, "database": db_status}
 
 
 # --- Phase 5: AI / RAG Integrations ---
 class AIIntegrationPayload(schemas.BaseModel):
-    provider_name: str
+    provider_name: str = Field(min_length=1, max_length=100)
     base_url: str | None = None
     api_key: str | None = None
     model_name: str | None = None
 
-@app.get("/ai-integrations")
-def get_ai_integrations(db: Session = Depends(get_db)):
-    integrations = db.query(models.AIIntegration).all()
-    return integrations
 
-@app.post("/ai-integrations")
-def create_ai_integration(payload: AIIntegrationPayload, db: Session = Depends(get_db)):
+class AIIntegrationUpdate(schemas.BaseModel):
+    base_url: str | None = Field(default=None, max_length=500)
+    api_key: str | None = None
+    model_name: str | None = Field(default=None, max_length=100)
+
+@app.get("/ai-integrations")
+def get_ai_integrations(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
+    integrations = db.query(models.AIIntegration).all()
+    # Never expose raw api_key — return a masked indicator instead
+    return [
+        {
+            "id": i.id,
+            "provider_name": i.provider_name,
+            "base_url": i.base_url,
+            "model_name": i.model_name,
+            "is_active": i.is_active,
+            "created_at": str(i.created_at) if i.created_at else None,
+            "has_api_key": bool(i.api_key),
+        }
+        for i in integrations
+    ]
+
+@app.post("/ai-integrations", status_code=201)
+def create_ai_integration(
+    payload: AIIntegrationPayload,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin")),
+):
     existing = db.query(models.AIIntegration).filter(models.AIIntegration.provider_name == payload.provider_name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Provider already configured.")
     new_ai = models.AIIntegration(
         provider_name=payload.provider_name,
         base_url=payload.base_url,
-        api_key=payload.api_key,
+        api_key=encrypt(payload.api_key),
         model_name=payload.model_name,
         is_active=False,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(new_ai)
     db.commit()
     db.refresh(new_ai)
-    return new_ai
+    return {"message": f"Provider '{new_ai.provider_name}' configured", "id": new_ai.id}
 
 @app.put("/ai-integrations/{integration_id}")
-def update_ai_integration(integration_id: int, payload: dict, db: Session = Depends(get_db)):
+def update_ai_integration(
+    integration_id: int = Path(..., ge=1),
+    payload: AIIntegrationUpdate = ...,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin")),
+):
     integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
-        
-    if "base_url" in payload:
-        integration.base_url = payload["base_url"]
-    if "api_key" in payload:
-        integration.api_key = payload["api_key"]
-    if "model_name" in payload:
-        integration.model_name = payload["model_name"]
-        
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "base_url" in update_data:
+        integration.base_url = update_data["base_url"]
+    if "api_key" in update_data and update_data["api_key"] is not None:
+        integration.api_key = encrypt(update_data["api_key"])
+    if "model_name" in update_data:
+        integration.model_name = update_data["model_name"]
+
     db.commit()
-    db.refresh(integration)
-    return integration
+    return {"message": "Updated successfully", "id": integration.id}
 
 @app.post("/ai-integrations/{integration_id}/activate")
-def activate_ai_integration(integration_id: int, db: Session = Depends(get_db)):
+def activate_ai_integration(integration_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     # Deactivate all others
     db.query(models.AIIntegration).update({"is_active": False})
-    
+
     # Activate target
     integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
-        
+
     integration.is_active = True
     db.commit()
     return {"message": f"{integration.provider_name} activated"}
 
 @app.delete("/ai-integrations/{integration_id}")
-def delete_ai_integration(integration_id: int, db: Session = Depends(get_db)):
+def delete_ai_integration(integration_id: int = Path(..., ge=1), db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     integration = db.query(models.AIIntegration).filter(models.AIIntegration.id == integration_id).first()
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
@@ -1751,19 +2248,27 @@ def delete_ai_integration(integration_id: int, db: Session = Depends(get_db)):
 
 
 # --- Phase 5: RAG Endpoints ---
-from backend.analytics import rag_engine
-from backend.analytics.vector_store import VectorStoreService
-from pydantic import BaseModel as PyBaseModel
 
-class RAGQueryPayload(PyBaseModel):
-    question: str
-    top_k: int = 5
+class RAGQueryPayload(BaseModel):
+    question: str = Field(min_length=1, max_length=5000)
+    top_k: int = Field(default=5, ge=1, le=20)
 
 def _get_active_integration(db: Session):
-    return db.query(models.AIIntegration).filter(models.AIIntegration.is_active == True).first()
+    """Return the active AI integration with its api_key decrypted for use.
+
+    The object is expunged from the session before the api_key is overwritten so
+    SQLAlchemy cannot flush the plaintext key back to the database.
+    """
+    integration = db.query(models.AIIntegration).filter(models.AIIntegration.is_active == True).first()
+    if not integration:
+        return None
+    db.expunge(integration)  # detach — mutations below are not tracked
+    if integration.api_key:
+        integration.api_key = decrypt(integration.api_key)
+    return integration
 
 @app.post("/rag/index")
-def rag_index_catalog(db: Session = Depends(get_db)):
+def rag_index_catalog(db: Session = Depends(get_db), _: models.User = Depends(require_role("super_admin", "admin"))):
     """
     Phase 5: Bulk index all enriched products into the ChromaDB Vector Store.
     Only products with enrichment_status='completed' are indexed.
@@ -1772,16 +2277,16 @@ def rag_index_catalog(db: Session = Depends(get_db)):
     if not integration:
         raise HTTPException(status_code=400, detail="No active AI provider. Configure one in Integrations → AI Language Models.")
 
-    products = db.query(models.RawProduct).filter(
-        models.RawProduct.enrichment_status == "completed"
+    entities = db.query(models.RawEntity).filter(
+        models.RawEntity.enrichment_status == "completed"
     ).all()
 
     indexed = 0
     skipped = 0
     errors = 0
 
-    for product in products:
-        result = rag_engine.index_product(product, integration)
+    for entity in entities:
+        result = rag_engine.index_entity(entity, integration)
         if result["status"] == "indexed":
             indexed += 1
         elif result["status"] == "skipped":
@@ -1798,7 +2303,7 @@ def rag_index_catalog(db: Session = Depends(get_db)):
     }
 
 @app.post("/rag/query")
-def rag_query(payload: RAGQueryPayload, db: Session = Depends(get_db)):
+def rag_query(payload: RAGQueryPayload, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     """
     Phase 5: Accepts a natural language question and returns a grounded, context-aware answer
     using the active LLM provider and the ChromaDB vector store.
@@ -1812,12 +2317,12 @@ def rag_query(payload: RAGQueryPayload, db: Session = Depends(get_db)):
     return result
 
 @app.get("/rag/stats")
-def rag_stats():
+def rag_stats(_: models.User = Depends(get_current_user)):
     """Returns ChromaDB index statistics."""
     return VectorStoreService.get_stats()
 
 @app.delete("/rag/index")
-def rag_clear_index():
+def rag_clear_index(_: models.User = Depends(require_role("super_admin", "admin"))):
     """Clears the entire vector index. Use with caution."""
     VectorStoreService.clear_all()
     return {"message": "Vector index cleared."}

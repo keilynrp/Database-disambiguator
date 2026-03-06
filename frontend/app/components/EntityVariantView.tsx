@@ -1,27 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useDomain } from "../contexts/DomainContext";
+import { apiFetch } from "@/lib/api";
 
 interface Variant {
     id: number;
-    product_name: string;
-    brand_capitalized: string;
-    model: string;
-    sku: string;
+    entity_name: string;
     variant: string;
-    classification: string;
-    product_type: string;
     validation_status: string;
+    normalized_json?: string;
+    [key: string]: any; // Allow arbitrary attributes
 }
 
-interface ProductGroup {
-    product_name: string;
+interface EntityGroup {
+    entity_name: string;
     variant_count: number;
     variants: Variant[];
 }
 
-export default function ProductVariantView() {
-    const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+export default function EntityVariantView() {
+    const { activeDomain } = useDomain();
+    const [entityGroups, setEntityGroups] = useState<EntityGroup[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -38,7 +38,7 @@ export default function ProductVariantView() {
     }, [search]);
 
     useEffect(() => {
-        async function fetchProducts() {
+        async function fetchEntities() {
             setLoading(true);
             try {
                 const queryParams = new URLSearchParams({
@@ -49,10 +49,10 @@ export default function ProductVariantView() {
                     queryParams.append("search", debouncedSearch);
                 }
 
-                const res = await fetch(`http://localhost:8000/products/grouped?${queryParams}`);
+                const res = await apiFetch(`/entities/grouped?${queryParams}`);
                 if (!res.ok) throw new Error("Failed to fetch products");
                 const data = await res.json();
-                setProductGroups(data);
+                setEntityGroups(data);
             } catch (error) {
                 console.error("Error fetching products:", error);
             } finally {
@@ -60,7 +60,7 @@ export default function ProductVariantView() {
             }
         }
 
-        fetchProducts();
+        fetchEntities();
     }, [debouncedSearch, page, limit]);
 
     const toggleGroup = (productName: string) => {
@@ -79,12 +79,12 @@ export default function ProductVariantView() {
         <div className="w-full max-w-7xl mx-auto p-4">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold dark:text-white">Product Catalog - Variant View</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Products grouped by name showing all variants</p>
+                    <h2 className="text-2xl font-bold dark:text-white">Entity Hub - Variant View</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Entities grouped by core data showing all variants</p>
                 </div>
                 <input
                     type="text"
-                    placeholder="Search products..."
+                    placeholder="Search entities..."
                     className="p-2 border rounded w-64 dark:bg-zinc-800 dark:text-white dark:border-zinc-700"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -100,19 +100,19 @@ export default function ProductVariantView() {
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
                         </div>
-                    ) : productGroups.length === 0 ? (
+                    ) : entityGroups.length === 0 ? (
                         <div className="py-12 text-center text-gray-500 dark:text-gray-400">
-                            No products found
+                            No entities found
                         </div>
                     ) : (
-                        productGroups.map((group) => {
-                            const isExpanded = expandedGroups.has(group.product_name);
+                        entityGroups.map((group) => {
+                            const isExpanded = expandedGroups.has(group.entity_name);
                             return (
-                                <div key={group.product_name} className="bg-white dark:bg-zinc-800">
+                                <div key={group.entity_name} className="bg-white dark:bg-zinc-800">
                                     {/* Group header */}
                                     <div
                                         className="px-6 py-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors"
-                                        onClick={() => toggleGroup(group.product_name)}
+                                        onClick={() => toggleGroup(group.entity_name)}
                                     >
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3 flex-1">
@@ -125,7 +125,7 @@ export default function ProductVariantView() {
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                 </svg>
                                                 <span className="font-medium text-gray-900 dark:text-white">
-                                                    {group.product_name}
+                                                    {group.entity_name}
                                                 </span>
                                             </div>
                                             <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-400">
@@ -141,37 +141,51 @@ export default function ProductVariantView() {
                                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-zinc-900 dark:text-gray-400">
                                                     <tr>
                                                         <th className="px-6 py-3">ID</th>
-                                                        <th className="px-6 py-3">Variant</th>
-                                                        <th className="px-6 py-3">Brand</th>
-                                                        <th className="px-6 py-3">Model</th>
-                                                        <th className="px-6 py-3">SKU</th>
-                                                        <th className="px-6 py-3">Classification</th>
-                                                        <th className="px-6 py-3">Type</th>
+                                                        {activeDomain ? (
+                                                            activeDomain.attributes.map(attr => (
+                                                                <th key={attr.name} className="px-6 py-3">{attr.label}</th>
+                                                            ))
+                                                        ) : (
+                                                            <th className="px-6 py-3">Variant</th>
+                                                        )}
                                                         <th className="px-6 py-3">Status</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                                    {group.variants.map((variant) => (
-                                                        <tr key={variant.id} className="bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700">
-                                                            <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{variant.id}</td>
-                                                            <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">
-                                                                {variant.variant || '-'}
-                                                            </td>
-                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.brand_capitalized || '-'}</td>
-                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.model || '-'}</td>
-                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.sku || '-'}</td>
-                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.classification || '-'}</td>
-                                                            <td className="px-6 py-3 text-gray-700 dark:text-gray-300">{variant.product_type || '-'}</td>
-                                                            <td className="px-6 py-3">
-                                                                <span className={`px-2 py-1 rounded text-xs ${variant.validation_status === 'valid' ? 'bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-400' :
-                                                                    variant.validation_status === 'invalid' ? 'bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-400' :
-                                                                        'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/10 dark:text-yellow-400'
-                                                                    }`}>
-                                                                    {variant.validation_status}
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
+                                                    {group.variants.map((variant) => {
+                                                        let parsedJson: Record<string, any> = {};
+                                                        if (variant.normalized_json) {
+                                                            try { parsedJson = JSON.parse(variant.normalized_json); } catch (e) { }
+                                                        }
+
+                                                        return (
+                                                            <tr key={variant.id} className="bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700">
+                                                                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{variant.id}</td>
+                                                                {activeDomain ? (
+                                                                    activeDomain.attributes.map(attr => {
+                                                                        const val = attr.is_core ? variant[attr.name] : (parsedJson[attr.name] || "");
+                                                                        return (
+                                                                            <td key={attr.name} className="px-6 py-3 text-gray-700 dark:text-gray-300">
+                                                                                {val || '-'}
+                                                                            </td>
+                                                                        );
+                                                                    })
+                                                                ) : (
+                                                                    <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">
+                                                                        {variant.variant || '-'}
+                                                                    </td>
+                                                                )}
+                                                                <td className="px-6 py-3">
+                                                                    <span className={`px-2 py-1 rounded text-xs ${variant.validation_status === 'valid' ? 'bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-400' :
+                                                                        variant.validation_status === 'invalid' ? 'bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-400' :
+                                                                            'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/10 dark:text-yellow-400'
+                                                                        }`}>
+                                                                        {variant.validation_status}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -219,7 +233,7 @@ export default function ProductVariantView() {
                     </div>
                     <button
                         onClick={() => setPage(p => p + 1)}
-                        disabled={productGroups.length < limit || loading}
+                        disabled={entityGroups.length < limit || loading}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                     >
                         Next

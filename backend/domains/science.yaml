@@ -1,0 +1,31 @@
+id: science
+name: Science & Research
+description: "Academic papers, publications, and scientific datasets"
+primary_entity: "Publication"
+icon: "Microscope"
+attributes:
+  - name: title
+    type: string
+    required: true
+    label: "Title"
+    is_core: false
+  - name: authors
+    type: array
+    label: "Authors"
+    is_core: false
+  - name: doi
+    type: string
+    label: "DOI"
+    is_core: true
+  - name: journal
+    type: string
+    label: "Journal/Venue"
+    is_core: false
+  - name: year
+    type: integer
+    label: "Publication Year"
+    is_core: false
+  - name: citations
+    type: integer
+    label: "Citation Count"
+    is_core: true

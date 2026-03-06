@@ -1,15 +1,9 @@
 import pytest
-from fastapi.testclient import TestClient
 import pandas as pd
 import json
 import os
 import tempfile
 import xml.etree.ElementTree as ET
-
-# Import the FastAPI app
-from backend.main import app
-
-client = TestClient(app)
 
 # --- Fixture Generators for Multidimensional Scaling ---
 # These functions dynamically create temporary data source files with scaling complexities.
@@ -77,7 +71,7 @@ def create_temp_parquet(rows: int, cols: int) -> str:
     ("xml", 5000, 0),    # Scaling XML: Testing stream threshold
     ("parquet", 20, 10), # Baseline Binary DataFrame
 ])
-def test_analyze_endpoint_multidimensional_scaling(format_type, rows, cols_or_nested):
+def test_analyze_endpoint_multidimensional_scaling(client, auth_headers, format_type, rows, cols_or_nested):
     """
     Iterative multidimensional parameter test to ensure the `/analyze` endpoint
     scales appropriately and extracts schema vectors across different formats and depths.
@@ -93,14 +87,18 @@ def test_analyze_endpoint_multidimensional_scaling(format_type, rows, cols_or_ne
         elif format_type == "xml":
             temp_file = create_temp_xml(rows)
             # ROOT + <record> + <id> + <name> + <price> = 5 unique tags
-            expected_count = 5 
+            expected_count = 5
         elif format_type == "parquet":
             temp_file = create_temp_parquet(rows, cols_or_nested)
             expected_count = cols_or_nested
-            
+
         with open(temp_file, "rb") as f:
-            response = client.post("/analyze", files={"file": (os.path.basename(temp_file), f, "application/octet-stream")})
-            
+            response = client.post(
+                "/analyze",
+                files={"file": (os.path.basename(temp_file), f, "application/octet-stream")},
+                headers=auth_headers,
+            )
+
         assert response.status_code == 200
         data = response.json()
         
@@ -114,18 +112,22 @@ def test_analyze_endpoint_multidimensional_scaling(format_type, rows, cols_or_ne
         if temp_file and os.path.exists(temp_file):
             os.remove(temp_file)
 
-def test_analyze_unsupported_format():
+def test_analyze_unsupported_format(client, auth_headers):
     """Validates negative testing constraints"""
     fd, path = tempfile.mkstemp(suffix=".xyz")
     os.close(fd)
-    
+
     try:
         with open(path, "w") as f:
             f.write("fake data")
-    
+
         with open(path, "rb") as f:
-            response = client.post("/analyze", files={"file": ("test.xyz", f, "text/plain")})
-            
+            response = client.post(
+                "/analyze",
+                files={"file": ("test.xyz", f, "text/plain")},
+                headers=auth_headers,
+            )
+
         assert response.status_code == 400
         assert "Unsupported file format" in response.json()["detail"]
     finally:

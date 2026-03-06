@@ -3,13 +3,14 @@ export type Language = 'en' | 'es';
 export const translations = {
     en: {
         // Sidebar
-        'nav.home': 'Product Catalog',
+        'nav.home': 'Knowledge Explorer',
         'nav.disambiguation': 'Disambiguation',
-        'nav.analytics': 'Analytics',
+        'nav.analytics': 'Intelligence Dashboard',
         'nav.authority': 'Authority Control',
-        'nav.import_export': 'Import / Export',
-        'nav.harmonization': 'Harmonize',
-        'nav.integrations': 'Integrations',
+        'nav.import_export': 'Entity Sync',
+        'nav.harmonization': 'Harmonization',
+        'nav.rag': 'Semantic AI',
+        'nav.integrations': 'Connectors',
         'nav.settings': 'Settings',
 
         // Settings
@@ -36,13 +37,14 @@ export const translations = {
     },
     es: {
         // Sidebar
-        'nav.home': 'Catálogo de Productos',
+        'nav.home': 'Explorador de Conocimiento',
         'nav.disambiguation': 'Desambiguación',
-        'nav.analytics': 'Analítica',
+        'nav.analytics': 'Panel de Inteligencia',
         'nav.authority': 'Control de Autoridad',
-        'nav.import_export': 'Importar / Exportar',
+        'nav.import_export': 'Sincronización de Entidades',
         'nav.harmonization': 'Armonización',
-        'nav.integrations': 'Integraciones',
+        'nav.rag': 'IA Semántica',
+        'nav.integrations': 'Conectores',
         'nav.settings': 'Configuración',
 
         // Settings

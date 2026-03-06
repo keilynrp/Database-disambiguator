@@ -3,7 +3,6 @@ Phase 5: ChromaDB Vector Store Service
 Central point of truth for all embedding indexing and semantic retrieval.
 Uses persistent ChromaDB (local disk) with a 'catalog_documents' collection.
 """
-import chromadb
 import os
 from typing import List, Dict, Any, Optional
 
@@ -11,18 +10,24 @@ from typing import List, Dict, Any, Optional
 CHROMADB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "chromadb")
 
 class VectorStoreService:
-    _client: chromadb.PersistentClient = None
+    _client = None
     _collection = None
     COLLECTION_NAME = "catalog_documents"
 
     @classmethod
     def _get_collection(cls):
         if cls._collection is None:
+            try:
+                import chromadb as _chromadb
+            except ImportError as exc:
+                raise RuntimeError(
+                    "chromadb is not installed. Run: pip install chromadb"
+                ) from exc
             os.makedirs(CHROMADB_PATH, exist_ok=True)
-            cls._client = chromadb.PersistentClient(path=CHROMADB_PATH)
+            cls._client = _chromadb.PersistentClient(path=CHROMADB_PATH)
             cls._collection = cls._client.get_or_create_collection(
                 name=cls.COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"}  # Best for semantic similarity
+                metadata={"hnsw:space": "cosine"},
             )
         return cls._collection
 

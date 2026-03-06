@@ -14,7 +14,7 @@ from backend.analytics.vector_store import VectorStoreService
 logger = logging.getLogger(__name__)
 
 # System prompt that grounds the LLM strictly in catalog data
-SYSTEM_PROMPT = """You are a specialized research assistant for DB Disambiguador, a scientometric catalog tool.
+SYSTEM_PROMPT = """You are a specialized research assistant for UKIP (Universal Knowledge Intelligence Platform).
 Your knowledge comes EXCLUSIVELY from the provided context extracted from the catalog.
 Answer questions directly based on the catalog entries, citations, and concepts shown in the context.
 If the context doesn't contain enough information to answer confidently, say so transparently.
@@ -63,31 +63,31 @@ def _build_adapter(integration_record) -> Optional[object]:
             return LocalAdapter(base_url=resolved_base_url, api_key=api_key, model_name=resolved_model)
 
         else:
-            logger.warning(f"RAGEngine: Unknown provider '{provider}'")
+            logger.warning(f"UKIP RAGEngine: Unknown provider '{provider}'")
             return None
 
     except Exception as e:
-        logger.error(f"RAGEngine: Failed to build adapter for '{provider}': {e}")
+        logger.error(f"UKIP RAGEngine: Failed to build adapter for '{provider}': {e}")
         return None
 
 
-def index_product(product, integration_record) -> Dict[str, Any]:
+def index_entity(entity, integration_record) -> Dict[str, Any]:
     """
     Phase 5 / Indexing Step:
-    Converts a product's enrichment data into an embedding and stores it in ChromaDB.
+    Converts an entity's enrichment data into an embedding and stores it in ChromaDB.
     """
     adapter = _build_adapter(integration_record)
     if not adapter:
         return {"status": "error", "message": "No active AI provider configured."}
 
-    # Build the canonical text representation of the product for embedding
+    # Build the canonical text representation of the entity for embedding
     parts = [
-        f"Title: {product.product_name or ''}",
-        f"Brand: {product.brand_capitalized or ''}",
-        f"Type: {product.product_type or ''}",
-        f"Concepts: {product.enrichment_concepts or ''}",
-        f"Citation Count: {product.enrichment_citation_count or 0}",
-        f"Source API: {product.enrichment_source or ''}",
+        f"Name: {entity.entity_name or ''}",
+        f"Brand: {entity.brand_capitalized or ''}",
+        f"Type: {entity.entity_type or ''}",
+        f"Concepts: {entity.enrichment_concepts or ''}",
+        f"Citation Count: {entity.enrichment_citation_count or 0}",
+        f"Source API: {entity.enrichment_source or ''}",
     ]
     text = " | ".join(p for p in parts if p.split(": ")[1])
 
@@ -96,23 +96,23 @@ def index_product(product, integration_record) -> Dict[str, Any]:
 
     try:
         embedding = adapter.get_embedding(text)
-        doc_id = f"product-{product.id}"
+        doc_id = f"entity-{entity.id}"
 
         VectorStoreService.upsert_document(
             doc_id=doc_id,
             text=text,
             embedding=embedding,
             metadata={
-                "product_id": product.id,
-                "product_name": product.product_name or "",
-                "citation_count": product.enrichment_citation_count or 0,
-                "source": product.enrichment_source or "unknown",
+                "entity_id": entity.id,
+                "entity_name": entity.entity_name or "",
+                "citation_count": entity.enrichment_citation_count or 0,
+                "source": entity.enrichment_source or "unknown",
                 "provider_used": adapter.provider_name,
             }
         )
         return {"status": "indexed", "doc_id": doc_id, "provider": adapter.provider_name}
     except Exception as e:
-        logger.error(f"RAGEngine index error for product {product.id}: {e}")
+        logger.error(f"RAGEngine index error for entity {entity.id}: {e}")
         return {"status": "error", "message": str(e)}
 
 

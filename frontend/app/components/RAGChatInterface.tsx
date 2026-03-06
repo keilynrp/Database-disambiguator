@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 
 interface Message {
     role: "user" | "assistant" | "system";
@@ -15,7 +16,7 @@ export default function RAGChatInterface() {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: "system",
-            content: "🧠 **Semantic RAG Assistant** — Ask anything about your catalog. I'll retrieve the most relevant documents and generate a grounded answer.",
+            content: "🧠 **Semantic Assistant** — Ask anything about your knowledge base. I'll retrieve the most relevant entities and generate a grounded answer.",
         }
     ]);
     const [input, setInput] = useState("");
@@ -34,7 +35,7 @@ export default function RAGChatInterface() {
 
     async function fetchStats() {
         try {
-            const res = await fetch("http://localhost:8000/rag/stats");
+            const res = await apiFetch("/rag/stats");
             if (res.ok) setIndexStats(await res.json());
         } catch { }
     }
@@ -42,12 +43,12 @@ export default function RAGChatInterface() {
     async function handleIndex() {
         setIsIndexing(true);
         try {
-            const res = await fetch("http://localhost:8000/rag/index", { method: "POST" });
+            const res = await apiFetch("/rag/index", { method: "POST" });
             if (!res.ok) throw new Error("Indexing failed");
             const data = await res.json();
             setMessages(prev => [...prev, {
                 role: "assistant",
-                content: `✅ **Indexing complete!** ${data.indexed} records embedded and stored in the Vector Database. ${data.skipped || 0} records skipped (insufficient data). You can now ask questions about your catalog.`
+                content: `✅ **Indexing complete!** ${data.indexed} items embedded and stored in the Vector Database. ${data.skipped || 0} entities skipped (insufficient data). You can now ask questions about your knowledge hub.`
             }]);
             fetchStats();
         } catch (e) {
@@ -69,7 +70,7 @@ export default function RAGChatInterface() {
         setIsQuerying(true);
 
         try {
-            const res = await fetch("http://localhost:8000/rag/query", {
+            const res = await apiFetch("/rag/query", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ question: query, top_k: 5 })
@@ -100,6 +101,12 @@ export default function RAGChatInterface() {
         }
     }
 
+    const formatSourceLabel = (src: any) => {
+        const name = src.metadata?.entity_name || src.id;
+        const score = Math.round(src.similarity_score * 100);
+        return `${name} (${score}%)`;
+    };
+
     return (
         <div className="flex h-[calc(100vh-200px)] flex-col rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
             {/* Header */}
@@ -107,14 +114,14 @@ export default function RAGChatInterface() {
                 <div className="flex items-center gap-2.5">
                     <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-lg dark:bg-indigo-500/20">🌌</span>
                     <div>
-                        <p className="text-sm font-bold text-gray-900 dark:text-white">Semantic Context Assistant</p>
-                        <p className="text-xs text-gray-500">RAG Phase 5 — Grounded by your catalog</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-white">Semantic AI Assistant</p>
+                        <p className="text-xs text-gray-500">UKIP Semantic RAG — Grounded by repository</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
                     {indexStats !== null && (
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${indexStats.total_indexed > 0 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'}`}>
-                            {indexStats.total_indexed > 0 ? `${indexStats.total_indexed} records indexed` : "Not indexed yet"}
+                            {indexStats.total_indexed > 0 ? `${indexStats.total_indexed} entities indexed` : "Not indexed yet"}
                         </span>
                     )}
                     <button
@@ -128,7 +135,7 @@ export default function RAGChatInterface() {
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
                         ) : "⚡"}
-                        {isIndexing ? "Indexing..." : "Index Catalog"}
+                        {isIndexing ? "Indexing..." : "Index Hub Knowledge"}
                     </button>
                 </div>
             </div>
@@ -156,7 +163,7 @@ export default function RAGChatInterface() {
                                             <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:150ms]" />
                                             <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:300ms]" />
                                         </div>
-                                        <span className="text-xs text-gray-500">Retrieving context & generating answer...</span>
+                                        <span className="text-xs text-gray-500">Analyzing knowledge & generating response...</span>
                                     </div>
                                 ) : (
                                     <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -169,7 +176,7 @@ export default function RAGChatInterface() {
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sources:</span>
                                     {msg.sources.map((src, j) => (
                                         <span key={j} className="rounded-full border border-indigo-100 bg-white px-2 py-0.5 text-[10px] font-medium text-indigo-600 dark:border-indigo-500/20 dark:bg-gray-800 dark:text-indigo-400">
-                                            {src.metadata?.product_name || src.id} ({Math.round(src.similarity_score * 100)}%)
+                                            {formatSourceLabel(src)}
                                         </span>
                                     ))}
                                     {msg.provider && (
@@ -193,7 +200,7 @@ export default function RAGChatInterface() {
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         disabled={isQuerying}
-                        placeholder="Ask something about your catalog... e.g. 'What are the most cited products related to deep learning?'"
+                        placeholder="Ask something about your hub... e.g. 'Synthesize key attributes of Entities in the Deep Learning domain'"
                         className="h-11 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm outline-none transition-colors focus:border-indigo-400 focus:bg-white focus:ring-1 focus:ring-indigo-400 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:bg-gray-800"
                     />
                     <button

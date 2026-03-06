@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import {
     AreaChart,
     Area,
@@ -37,7 +38,7 @@ export default function MonteCarloChart({ productId }: { productId: number }) {
             setLoading(true);
             setError(null);
             try {
-                const res = await fetch(`http://localhost:8000/enrich/montecarlo/${productId}`);
+                const res = await apiFetch(`/enrich/montecarlo/${productId}`);
                 if (!res.ok) {
                     const errData = await res.json();
                     throw new Error(errData.detail || "Failed to load Monte Carlo simulation");
