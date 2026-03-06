@@ -181,3 +181,51 @@ class UserResponse(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password:     str = Field(min_length=8, max_length=128)
+
+
+# ── Authority Resolution Layer ────────────────────────────────────────────────
+
+class AuthorityEntityType(str, Enum):
+    general      = "general"
+    person       = "person"
+    organization = "organization"
+    concept      = "concept"
+    institution  = "institution"
+
+
+class AuthorityResolveRequest(BaseModel):
+    field_name:  str                = Field(min_length=1, max_length=64)
+    value:       str                = Field(min_length=1, max_length=500)
+    entity_type: AuthorityEntityType = AuthorityEntityType.general
+    # Sprint 16 — optional contextual signals for the scoring engine
+    context_affiliation: Optional[str] = Field(None, max_length=500)
+    context_orcid_hint:  Optional[str] = Field(None, max_length=25)
+    context_doi:         Optional[str] = Field(None, max_length=200)
+    context_year:        Optional[int] = Field(None, ge=1000, le=2100)
+
+
+class AuthorityRecordResponse(BaseModel):
+    id:                int
+    field_name:        str
+    original_value:    str
+    authority_source:  str
+    authority_id:      str
+    canonical_label:   str
+    aliases:           List[str]
+    description:       Optional[str] = None
+    confidence:        float
+    uri:               Optional[str] = None
+    status:            str
+    created_at:        str
+    confirmed_at:      Optional[str] = None
+    # Sprint 16 — scoring engine fields
+    resolution_status: str                    = "unresolved"
+    score_breakdown:   Optional[dict]         = None
+    evidence:          Optional[List[str]]    = None
+    merged_sources:    Optional[List[str]]    = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuthorityConfirmRequest(BaseModel):
+    also_create_rule: bool = True

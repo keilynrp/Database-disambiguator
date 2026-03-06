@@ -8,6 +8,8 @@ interface VariationGroup {
     main: string;
     variations: string[];
     count: number;
+    has_rules?: boolean;
+    resolved_to?: string | null;
 }
 
 interface DisambiguationResponse {
@@ -15,11 +17,39 @@ interface DisambiguationResponse {
     total_groups: number;
 }
 
+interface AuthorityRecord {
+    id: number;
+    authority_source: string;
+    authority_id: string;
+    canonical_label: string;
+    aliases: string[];
+    description: string | null;
+    confidence: number;
+    uri: string | null;
+    status: string;
+}
+
+const SOURCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
+    wikidata:  { label: "Wikidata",  bg: "bg-amber-100 dark:bg-amber-500/20",  text: "text-amber-800 dark:text-amber-300" },
+    viaf:      { label: "VIAF",      bg: "bg-blue-100 dark:bg-blue-500/20",    text: "text-blue-800 dark:text-blue-300" },
+    orcid:     { label: "ORCID",     bg: "bg-green-100 dark:bg-green-500/20",  text: "text-green-800 dark:text-green-300" },
+    dbpedia:   { label: "DBpedia",   bg: "bg-red-100 dark:bg-red-500/20",      text: "text-red-800 dark:text-red-300" },
+    openalex:  { label: "OpenAlex",  bg: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-800 dark:text-violet-300" },
+};
+
+const ENTITY_TYPES = [
+    { value: "general",     label: "General" },
+    { value: "organization", label: "Organization / Brand" },
+    { value: "person",      label: "Person / Author" },
+    { value: "institution", label: "Institution" },
+    { value: "concept",     label: "Concept / Category" },
+];
+
 export default function DisambiguationTool() {
     const { activeDomain } = useDomain();
     const [field, setField] = useState("");
+    const [entityType, setEntityType] = useState("general");
 
-    // Auto-select first string field when domain loads
     useEffect(() => {
         if (activeDomain && !field) {
             const firstString = activeDomain.attributes.find(a => a.type === "string");
@@ -30,9 +60,16 @@ export default function DisambiguationTool() {
     const [groups, setGroups] = useState<VariationGroup[]>([]);
     const [loading, setLoading] = useState(false);
     const [totalGroups, setTotalGroups] = useState(0);
+
+    // AI resolution state
     const [resolvingIdx, setResolvingIdx] = useState<number | null>(null);
     const [resolutions, setResolutions] = useState<Record<number, { canonical_value: string; reasoning: string }>>({});
     const [processingRule, setProcessingRule] = useState<number | null>(null);
+
+    // Authority resolution state
+    const [authorityLoading, setAuthorityLoading] = useState<Record<number, boolean>>({});
+    const [authorityCandidates, setAuthorityCandidates] = useState<Record<number, AuthorityRecord[]>>({});
+    const [authorityAction, setAuthorityAction] = useState<Record<number, number | null>>({});
 
     async function analyze() {
         setLoading(true);
@@ -42,6 +79,7 @@ export default function DisambiguationTool() {
             const data: DisambiguationResponse = await res.json();
             setGroups(data.groups);
             setTotalGroups(data.total_groups);
+            setAuthorityCandidates({});
         } catch (error) {
             console.error(error);
             alert("Error analyzing data");
@@ -78,12 +116,7 @@ export default function DisambiguationTool() {
                 body: JSON.stringify({ field_name: field, canonical_value, variations })
             });
             if (!res.ok) throw new Error("Failed to save rules");
-
-            // Execute rules to update database entities
-            const applyRes = await apiFetch(`/rules/apply?field_name=${field}`, { method: "POST" });
-            if (!applyRes.ok) throw new Error("Failed to apply rules to database");
-
-            // Re-fetch groups after applying to see updated list
+            await apiFetch(`/rules/apply?field_name=${field}`, { method: "POST" });
             analyze();
         } catch (error) {
             console.error(error);
@@ -93,7 +126,70 @@ export default function DisambiguationTool() {
         }
     }
 
-    // Helper to get friendly label
+    async function resolveWithAuthority(idx: number, mainValue: string) {
+        setAuthorityLoading(prev => ({ ...prev, [idx]: true }));
+        try {
+            const res = await apiFetch(`/authority/resolve`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    field_name: field,
+                    value: mainValue,
+                    entity_type: entityType,
+                }),
+            });
+            if (!res.ok) throw new Error("Authority resolve failed");
+            const records: AuthorityRecord[] = await res.json();
+            setAuthorityCandidates(prev => ({ ...prev, [idx]: records }));
+        } catch (error) {
+            console.error(error);
+            alert("Error querying authority sources");
+        } finally {
+            setAuthorityLoading(prev => ({ ...prev, [idx]: false }));
+        }
+    }
+
+    async function confirmCandidate(groupIdx: number, recordId: number) {
+        setAuthorityAction(prev => ({ ...prev, [groupIdx]: recordId }));
+        try {
+            const res = await apiFetch(`/authority/records/${recordId}/confirm`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ also_create_rule: true }),
+            });
+            if (!res.ok) throw new Error("Confirm failed");
+            const updated: AuthorityRecord = await res.json();
+            setAuthorityCandidates(prev => ({
+                ...prev,
+                [groupIdx]: (prev[groupIdx] || []).map(r => r.id === recordId ? { ...r, status: updated.status } : r),
+            }));
+        } catch (error) {
+            console.error(error);
+            alert("Error confirming candidate");
+        } finally {
+            setAuthorityAction(prev => ({ ...prev, [groupIdx]: null }));
+        }
+    }
+
+    async function rejectCandidate(groupIdx: number, recordId: number) {
+        setAuthorityAction(prev => ({ ...prev, [groupIdx]: recordId }));
+        try {
+            const res = await apiFetch(`/authority/records/${recordId}/reject`, {
+                method: "POST",
+            });
+            if (!res.ok) throw new Error("Reject failed");
+            setAuthorityCandidates(prev => ({
+                ...prev,
+                [groupIdx]: (prev[groupIdx] || []).map(r => r.id === recordId ? { ...r, status: "rejected" } : r),
+            }));
+        } catch (error) {
+            console.error(error);
+            alert("Error rejecting candidate");
+        } finally {
+            setAuthorityAction(prev => ({ ...prev, [groupIdx]: null }));
+        }
+    }
+
     const fieldLabel = activeDomain?.attributes.find(a => a.name === field)?.label || field;
 
     return (
@@ -112,13 +208,27 @@ export default function DisambiguationTool() {
                         >
                             {activeDomain ? (
                                 activeDomain.attributes
-                                    .filter(a => a.type === 'string')
+                                    .filter(a => a.type === "string")
                                     .map(attr => (
                                         <option key={attr.name} value={attr.name}>{attr.label}</option>
                                     ))
                             ) : (
                                 <option value="">Loading attributes...</option>
                             )}
+                        </select>
+                    </div>
+                    <div className="min-w-[180px]">
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Entity Type (for Authority)
+                        </label>
+                        <select
+                            value={entityType}
+                            onChange={(e) => setEntityType(e.target.value)}
+                            className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            {ENTITY_TYPES.map(et => (
+                                <option key={et.value} value={et.value}>{et.label}</option>
+                            ))}
                         </select>
                     </div>
                     <button
@@ -189,7 +299,7 @@ export default function DisambiguationTool() {
                             ))}
                         </div>
 
-                        {/* Integration of LLM / AI Resolution block */}
+                        {/* AI Resolution block */}
                         {resolutions[idx] ? (
                             <div className="mt-4 rounded-xl relative border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
                                 <div className="absolute right-4 top-4 text-indigo-400 dark:text-indigo-500">
@@ -221,7 +331,7 @@ export default function DisambiguationTool() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="mt-4 flex justify-end">
+                            <div className="mt-4 flex justify-end gap-2">
                                 <button
                                     onClick={() => resolveWithAI(idx, group.variations)}
                                     disabled={resolvingIdx === idx}
@@ -244,6 +354,133 @@ export default function DisambiguationTool() {
                                         </>
                                     )}
                                 </button>
+                                <button
+                                    onClick={() => resolveWithAuthority(idx, group.main)}
+                                    disabled={!!authorityLoading[idx]}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:bg-gray-900 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                                >
+                                    {authorityLoading[idx] ? (
+                                        <>
+                                            <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                            </svg>
+                                            Querying sources...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
+                                            </svg>
+                                            Resolve with Authority
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Authority candidates panel */}
+                        {authorityCandidates[idx] && authorityCandidates[idx].length > 0 && (
+                            <div className="mt-4 space-y-2">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                    Authority Candidates ({authorityCandidates[idx].length})
+                                </p>
+                                {authorityCandidates[idx].map((rec) => {
+                                    const style = SOURCE_STYLES[rec.authority_source] ?? {
+                                        label: rec.authority_source,
+                                        bg: "bg-gray-100 dark:bg-gray-700",
+                                        text: "text-gray-700 dark:text-gray-300",
+                                    };
+                                    const isActing = authorityAction[idx] === rec.id;
+                                    return (
+                                        <div
+                                            key={rec.id}
+                                            className={`rounded-xl border p-3 transition-opacity ${
+                                                rec.status === "rejected"
+                                                    ? "border-gray-200 opacity-40 dark:border-gray-700"
+                                                    : rec.status === "confirmed"
+                                                    ? "border-green-300 bg-green-50/40 dark:border-green-700 dark:bg-green-500/10"
+                                                    : "border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-800/50"
+                                            }`}
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${style.bg} ${style.text}`}>
+                                                            {style.label}
+                                                        </span>
+                                                        <span className="text-sm font-medium text-gray-900 truncate dark:text-white">
+                                                            {rec.canonical_label}
+                                                        </span>
+                                                        {rec.uri && (
+                                                            <a
+                                                                href={rec.uri}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-gray-400 hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400"
+                                                            >
+                                                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                </svg>
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                    {rec.description && (
+                                                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                                                            {rec.description}
+                                                        </p>
+                                                    )}
+                                                    {/* Confidence bar */}
+                                                    <div className="mt-1.5 flex items-center gap-2">
+                                                        <div className="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-gray-700">
+                                                            <div
+                                                                className="h-1.5 rounded-full bg-blue-500"
+                                                                style={{ width: `${Math.round(rec.confidence * 100)}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                                                            {Math.round(rec.confidence * 100)}%
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {rec.status === "pending" && (
+                                                    <div className="flex gap-1.5 shrink-0">
+                                                        <button
+                                                            onClick={() => confirmCandidate(idx, rec.id)}
+                                                            disabled={isActing}
+                                                            className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                                                        >
+                                                            {isActing ? "..." : "Confirm"}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => rejectCandidate(idx, rec.id)}
+                                                            disabled={isActing}
+                                                            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                                        >
+                                                            {isActing ? "..." : "Reject"}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {rec.status === "confirmed" && (
+                                                    <span className="shrink-0 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-500/20 dark:text-green-400">
+                                                        Confirmed
+                                                    </span>
+                                                )}
+                                                {rec.status === "rejected" && (
+                                                    <span className="shrink-0 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                                                        Rejected
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {authorityCandidates[idx] && authorityCandidates[idx].length === 0 && (
+                            <div className="mt-3 rounded-xl border border-dashed border-gray-200 p-3 text-center dark:border-gray-700">
+                                <p className="text-xs text-gray-400 dark:text-gray-500">No authority candidates found for &quot;{group.main}&quot;</p>
                             </div>
                         )}
                     </div>

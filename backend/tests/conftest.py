@@ -133,6 +133,7 @@ _TABLES_TO_CLEAN = [
     "normalization_rules",
     "harmonization_logs",
     "harmonization_change_records",
+    "authority_records",
     # Note: "users" is intentionally excluded — the super_admin/editor/viewer
     # test accounts must persist across the entire test session.
 ]

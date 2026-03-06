@@ -34,6 +34,8 @@ from backend.analytics import rag_engine
 from backend.analytics.montecarlo import simulate_citation_impact
 from backend.analytics.vector_store import VectorStoreService
 from backend.auth import authenticate_user, create_access_token, get_current_user, require_role
+from backend.authority.resolver import resolve_all as _authority_resolve_all
+from backend.authority.base import ResolveContext as _AuthorityContext
 from backend.datasource_analyzer import DataSourceAnalyzer
 from backend.encryption import encrypt, decrypt
 from backend.llm_agent import resolve_canonical_name
@@ -68,6 +70,15 @@ with database.engine.connect() as conn:
         if "failed_attempts" not in user_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE users ADD COLUMN locked_until VARCHAR"))
+            conn.commit()
+
+    if "authority_records" in inspector.get_table_names():
+        ar_cols = [col["name"] for col in inspector.get_columns("authority_records")]
+        if "resolution_status" not in ar_cols:
+            conn.execute(text("ALTER TABLE authority_records ADD COLUMN resolution_status VARCHAR DEFAULT 'unresolved'"))
+            conn.execute(text("ALTER TABLE authority_records ADD COLUMN score_breakdown TEXT"))
+            conn.execute(text("ALTER TABLE authority_records ADD COLUMN evidence TEXT"))
+            conn.execute(text("ALTER TABLE authority_records ADD COLUMN merged_sources TEXT"))
             conn.commit()
 
 @asynccontextmanager
@@ -1190,6 +1201,214 @@ def apply_rules(field_name: str = None, db: Session = Depends(get_db), _: models
     }
 
 
+# ── Authority Resolution Layer ───────────────────────────────────────────
+
+def _serialize_authority_record(r: models.AuthorityRecord) -> dict:
+    """Convert ORM record to dict, deserializing all JSON fields."""
+    return {
+        "id":               r.id,
+        "field_name":       r.field_name,
+        "original_value":   r.original_value,
+        "authority_source": r.authority_source,
+        "authority_id":     r.authority_id,
+        "canonical_label":  r.canonical_label,
+        "aliases":          json.loads(r.aliases or "[]"),
+        "description":      r.description,
+        "confidence":       r.confidence,
+        "uri":              r.uri,
+        "status":           r.status,
+        "created_at":       r.created_at,
+        "confirmed_at":     r.confirmed_at,
+        # Sprint 16
+        "resolution_status": r.resolution_status or "unresolved",
+        "score_breakdown":   json.loads(r.score_breakdown or "{}"),
+        "evidence":          json.loads(r.evidence or "[]"),
+        "merged_sources":    json.loads(r.merged_sources or "[]"),
+    }
+
+
+@app.post("/authority/resolve", status_code=201, tags=["authority"])
+def resolve_authority(
+    payload: schemas.AuthorityResolveRequest,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """
+    Query all authority sources in parallel for a given value and persist
+    the candidates with status='pending'.  Returns the persisted records.
+    """
+    ctx = _AuthorityContext(
+        affiliation=payload.context_affiliation,
+        orcid_hint=payload.context_orcid_hint,
+        doi=payload.context_doi,
+        year=payload.context_year,
+    )
+    candidates = _authority_resolve_all(payload.value, payload.entity_type.value, ctx)
+
+    records = []
+    for c in candidates:
+        rec = models.AuthorityRecord(
+            field_name=payload.field_name,
+            original_value=payload.value,
+            authority_source=c.authority_source,
+            authority_id=c.authority_id,
+            canonical_label=c.canonical_label,
+            aliases=json.dumps(c.aliases),
+            description=c.description,
+            confidence=c.confidence,
+            uri=c.uri,
+            status="pending",
+            resolution_status=c.resolution_status,
+            score_breakdown=json.dumps(c.score_breakdown),
+            evidence=json.dumps(c.evidence),
+            merged_sources=json.dumps(c.merged_sources),
+        )
+        db.add(rec)
+        records.append(rec)
+
+    db.commit()
+    for rec in records:
+        db.refresh(rec)
+
+    return [_serialize_authority_record(r) for r in records]
+
+
+@app.get("/authority/records", tags=["authority"])
+def list_authority_records(
+    field_name: Optional[str] = Query(None, max_length=64),
+    status: Optional[str] = Query(None, pattern="^(pending|confirmed|rejected)$"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """List persisted authority candidates with optional filtering."""
+    q = db.query(models.AuthorityRecord)
+    if field_name:
+        q = q.filter(models.AuthorityRecord.field_name == field_name)
+    if status:
+        q = q.filter(models.AuthorityRecord.status == status)
+    q = q.order_by(models.AuthorityRecord.confidence.desc())
+    total = q.count()
+    records = q.offset(skip).limit(limit).all()
+    return {
+        "total": total,
+        "records": [_serialize_authority_record(r) for r in records],
+    }
+
+
+@app.post("/authority/records/{record_id}/confirm", tags=["authority"])
+def confirm_authority_record(
+    record_id: int = Path(ge=1),
+    payload: schemas.AuthorityConfirmRequest = schemas.AuthorityConfirmRequest(),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """
+    Confirm a candidate as the authoritative form.
+    Optionally creates a NormalizationRule mapping original_value → canonical_label.
+    """
+    rec = db.get(models.AuthorityRecord, record_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="AuthorityRecord not found")
+
+    rec.status = "confirmed"
+    rec.confirmed_at = datetime.now(timezone.utc).isoformat()
+
+    rule_created = False
+    if payload.also_create_rule:
+        existing = db.query(models.NormalizationRule).filter(
+            models.NormalizationRule.field_name == rec.field_name,
+            models.NormalizationRule.original_value == rec.original_value,
+        ).first()
+        if not existing:
+            rule = models.NormalizationRule(
+                field_name=rec.field_name,
+                original_value=rec.original_value,
+                normalized_value=rec.canonical_label,
+                is_regex=False,
+            )
+            db.add(rule)
+            rule_created = True
+
+    db.commit()
+    db.refresh(rec)
+    return {**_serialize_authority_record(rec), "rule_created": rule_created}
+
+
+@app.post("/authority/records/{record_id}/reject", tags=["authority"])
+def reject_authority_record(
+    record_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """Mark a candidate as rejected."""
+    rec = db.get(models.AuthorityRecord, record_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="AuthorityRecord not found")
+
+    rec.status = "rejected"
+    db.commit()
+    db.refresh(rec)
+    return _serialize_authority_record(rec)
+
+
+@app.delete("/authority/records/{record_id}", tags=["authority"])
+def delete_authority_record(
+    record_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """Permanently delete an authority candidate record."""
+    rec = db.get(models.AuthorityRecord, record_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="AuthorityRecord not found")
+
+    db.delete(rec)
+    db.commit()
+    return {"message": "Deleted", "id": record_id}
+
+
+@app.get("/authority/metrics", tags=["authority"])
+def authority_metrics(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """
+    Operational and quality KPIs for the Authority Resolution Layer.
+    Returns counts by manual status, by resolution status, by source,
+    average confidence, and confirm/reject rates.
+    """
+    total = db.query(func.count(models.AuthorityRecord.id)).scalar() or 0
+
+    by_status: dict = {}
+    for row in db.query(models.AuthorityRecord.status, func.count(models.AuthorityRecord.id)).group_by(models.AuthorityRecord.status).all():
+        by_status[row[0]] = row[1]
+
+    by_resolution: dict = {}
+    for row in db.query(models.AuthorityRecord.resolution_status, func.count(models.AuthorityRecord.id)).group_by(models.AuthorityRecord.resolution_status).all():
+        if row[0]:
+            by_resolution[row[0]] = row[1]
+
+    by_source: dict = {}
+    for row in db.query(models.AuthorityRecord.authority_source, func.count(models.AuthorityRecord.id)).group_by(models.AuthorityRecord.authority_source).all():
+        by_source[row[0]] = row[1]
+
+    avg_conf = db.query(func.avg(models.AuthorityRecord.confidence)).scalar() or 0.0
+    confirmed = by_status.get("confirmed", 0)
+    rejected  = by_status.get("rejected", 0)
+
+    return {
+        "total_records":       total,
+        "by_status":           by_status,
+        "by_resolution_status": by_resolution,
+        "by_source":           by_source,
+        "avg_confidence":      round(float(avg_conf), 3),
+        "confirm_rate":        round(confirmed / total, 3) if total > 0 else 0.0,
+        "reject_rate":         round(rejected  / total, 3) if total > 0 else 0.0,
+    }
+
+
 @app.get("/authority/{field}")
 def get_authority_view(field: str, threshold: int = Query(default=80, ge=0, le=100), db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     try:
@@ -1229,7 +1448,6 @@ def get_authority_view(field: str, threshold: int = Query(default=80, ge=0, le=1
         "total_rules": total_rules,
         "pending_groups": sum(1 for g in annotated if not g["has_rules"]),
     }
-
 
 
 # ── Harmonization Pipeline ──────────────────────────────────────────────

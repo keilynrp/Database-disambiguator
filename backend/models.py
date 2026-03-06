@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float
 from .database import Base
 
 class RawEntity(Base):
@@ -198,3 +198,34 @@ class User(Base):
     created_at      = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
     failed_attempts = Column(Integer, default=0)
     locked_until    = Column(String, nullable=True)  # ISO datetime string; None = not locked
+
+
+# ── Authority Resolution Layer ──────────────────────────────────────────────
+
+class AuthorityRecord(Base):
+    """
+    Stores candidates returned by the Authority Resolution Layer.
+    Each record links a local field value to an entry in an external
+    knowledge authority (Wikidata, VIAF, ORCID, DBpedia, OpenAlex).
+    status: pending | confirmed | rejected
+    """
+    __tablename__ = "authority_records"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    field_name       = Column(String, index=True)         # e.g. "brand_capitalized"
+    original_value   = Column(String, index=True)         # local value that was queried
+    authority_source = Column(String, index=True)         # wikidata | viaf | orcid | dbpedia | openalex
+    authority_id     = Column(String)                     # Q2283 | viaf/20069448 | 0000-0001-… etc.
+    canonical_label  = Column(String)                     # official canonical form from the authority
+    aliases          = Column(Text, nullable=True)        # JSON array of known aliases
+    description      = Column(Text, nullable=True)        # short description from authority
+    confidence       = Column(Float, default=0.0)         # 0.0–1.0 fuzzy similarity score
+    uri              = Column(String, nullable=True)       # URL of the authority record
+    status           = Column(String, default="pending", index=True)
+    created_at       = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
+    confirmed_at     = Column(String, nullable=True)
+    # Sprint 16 — scoring engine
+    resolution_status = Column(String, default="unresolved", index=True)  # exact_match | probable_match | ambiguous | unresolved
+    score_breakdown   = Column(Text, nullable=True)   # JSON: {identifiers, name, affiliation, coauthorship, topic}
+    evidence          = Column(Text, nullable=True)   # JSON array of signal strings
+    merged_sources    = Column(Text, nullable=True)   # JSON array of "source:id" refs merged into this record
