@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useDomain } from "../contexts/DomainContext";
 import { apiFetch } from "@/lib/api";
+import { Badge } from "./ui";
 
 interface Variant {
     id: number;
@@ -20,7 +21,7 @@ interface EntityGroup {
 }
 
 export default function EntityVariantView() {
-    const { activeDomain } = useDomain();
+    const { activeDomain, activeDomainId } = useDomain();
     const [entityGroups, setEntityGroups] = useState<EntityGroup[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -61,7 +62,7 @@ export default function EntityVariantView() {
         }
 
         fetchEntities();
-    }, [debouncedSearch, page, limit]);
+    }, [debouncedSearch, page, limit, activeDomainId]);
 
     const toggleGroup = (productName: string) => {
         setExpandedGroups(prev => {
@@ -176,12 +177,10 @@ export default function EntityVariantView() {
                                                                     </td>
                                                                 )}
                                                                 <td className="px-6 py-3">
-                                                                    <span className={`px-2 py-1 rounded text-xs ${variant.validation_status === 'valid' ? 'bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-400' :
-                                                                        variant.validation_status === 'invalid' ? 'bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-400' :
-                                                                            'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/10 dark:text-yellow-400'
-                                                                        }`}>
-                                                                        {variant.validation_status}
-                                                                    </span>
+                                                                    <Badge variant={
+                                                                        variant.validation_status === "valid" ? "success" :
+                                                                        variant.validation_status === "invalid" ? "error" : "warning"
+                                                                    }>{variant.validation_status}</Badge>
                                                                 </td>
                                                             </tr>
                                                         );

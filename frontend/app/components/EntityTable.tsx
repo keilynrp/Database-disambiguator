@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import MonteCarloChart from "./MonteCarloChart";
-import { useDomain } from "../contexts/DomainContext"; // Added import
+import { useDomain } from "../contexts/DomainContext";
 import { apiFetch } from "@/lib/api";
+import { Badge } from "./ui";
 
 interface Entity {
     id: number;
@@ -24,25 +25,8 @@ interface Entity {
 
 type EditableFields = Pick<Entity, "entity_name" | "brand_capitalized" | "model" | "sku" | "classification" | "entity_type" | "validation_status" | "gtin" | "variant" | "status">;
 
-function StatusBadge({ status }: { status: string }) {
-    const styles: Record<string, string> = {
-        valid: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
-        invalid: "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400",
-        active: "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400",
-        inactive: "bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400",
-        pending: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-    };
-    const fallback = styles.pending;
-
-    return (
-        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status?.toLowerCase()] || fallback}`}>
-            {status}
-        </span>
-    );
-}
-
 export default function EntityTable() {
-    const { activeDomain } = useDomain(); // Added activeDomain from useDomain
+    const { activeDomain, activeDomainId } = useDomain();
     const [entities, setEntities] = useState<Entity[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -97,7 +81,7 @@ export default function EntityTable() {
         } finally {
             setLoading(false);
         }
-    }, [debouncedSearch, page, limit]);
+    }, [debouncedSearch, page, limit, activeDomainId]);
 
     useEffect(() => { fetchEntities(); }, [fetchEntities]);
 
@@ -196,7 +180,7 @@ export default function EntityTable() {
             </div>
 
             {/* Table card */}
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div className="table-container">
                     <table className="w-full min-w-[1200px] text-left text-sm">
                         <thead>
@@ -344,7 +328,11 @@ export default function EntityTable() {
                                                 </td>
                                             )}
                                             <td className="px-5 py-3.5">
-                                                <StatusBadge status={entity.validation_status} />
+                                                <Badge variant={
+                                                    entity.validation_status === "valid" || entity.validation_status === "active" ? "success" :
+                                                    entity.validation_status === "invalid" ? "error" :
+                                                    entity.validation_status === "inactive" ? "default" : "warning"
+                                                }>{entity.validation_status}</Badge>
                                             </td>
                                             <td className="px-5 py-3.5">
                                                 <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -392,7 +380,7 @@ export default function EntityTable() {
                                                         onClick={() => enrichEntity(entity.id)}
                                                         disabled={enrichingId === entity.id}
                                                         className="rounded-lg p-1.5 text-gray-400 hover:bg-purple-100 hover:text-purple-600 disabled:opacity-50 dark:hover:bg-purple-500/10 dark:hover:text-purple-400"
-                                                        title="Enrich with OpenAlex"
+                                                        title="Enrich entity"
                                                     >
                                                         {enrichingId === entity.id ? (
                                                             <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
