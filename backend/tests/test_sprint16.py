@@ -27,7 +27,7 @@ from backend.authority.normalize import (
 from backend.authority.scoring import compute_score
 from backend.authority.resolver import _deduplicate
 
-_MOCK_TARGET = "backend.main._authority_resolve_all"
+_MOCK_TARGET = "backend.routers.authority._authority_resolve_all"
 
 
 # ── 16A · normalize.py ───────────────────────────────────────────────────────

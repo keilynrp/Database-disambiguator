@@ -1,0 +1,180 @@
+"""
+Authentication and user management endpoints.
+  POST /auth/token
+  GET/POST/GET{id}/PUT/DELETE /users
+  GET/POST /users/me  /users/me/password
+"""
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from backend import models, schemas
+from backend.auth import authenticate_user, create_access_token, get_current_user, require_role
+from backend.database import get_db
+from backend.routers.limiter import limiter
+
+router = APIRouter()
+
+
+# ── Authentication ────────────────────────────────────────────────────────────
+
+@router.post("/auth/token", tags=["auth"])
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """
+    Obtain a Bearer token. Credentials are managed in the users table.
+    Rate-limited to 5 attempts per minute per IP.
+    """
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = create_access_token(subject=user.username, role=user.role)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+# ── User Management (RBAC) ────────────────────────────────────────────────────
+
+@router.get("/users/me", response_model=schemas.UserResponse, tags=["users"])
+def get_my_profile(current_user: models.User = Depends(get_current_user)):
+    """Return the profile of the currently authenticated user."""
+    return current_user
+
+
+@router.post("/users/me/password", tags=["users"])
+def change_my_password(
+    payload: schemas.PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Change the authenticated user's own password."""
+    from backend.auth import hash_password as _hp, verify_password
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current_user.password_hash = _hp(payload.new_password)
+    db.commit()
+    return {"message": "Password updated successfully"}
+
+
+@router.get("/users", response_model=List[schemas.UserResponse], tags=["users"])
+def list_users(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """List all users. Requires super_admin."""
+    return db.query(models.User).offset(skip).limit(limit).all()
+
+
+@router.post("/users", response_model=schemas.UserResponse, status_code=201, tags=["users"])
+def create_user(
+    payload: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """Create a new user. Requires super_admin."""
+    existing = db.query(models.User).filter(models.User.username == payload.username).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    from backend.auth import hash_password as _hash_pw
+    new_user = models.User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=_hash_pw(payload.password),
+        role=payload.role.value,
+        is_active=True,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@router.get("/users/{user_id}", response_model=schemas.UserResponse, tags=["users"])
+def get_user(
+    user_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """Get a user by ID. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.put("/users/{user_id}", response_model=schemas.UserResponse, tags=["users"])
+def update_user(
+    user_id: int = Path(..., ge=1),
+    payload: schemas.UserUpdate = ...,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin")),
+):
+    """Update a user's email, password, role, or active status. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Prevent self-role change
+    if user.id == current_user.id and payload.role is not None and payload.role.value != current_user.role:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+    # Prevent deactivating self
+    if user.id == current_user.id and payload.is_active is False:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    # Ensure at least one super_admin remains active
+    if payload.role is not None and user.role == "super_admin" and payload.role.value != "super_admin":
+        active_superadmins = db.query(models.User).filter(
+            models.User.role == "super_admin", models.User.is_active == True
+        ).count()
+        if active_superadmins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last active super_admin")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "password" in update_data:
+        from backend.auth import hash_password as _hash_pw
+        update_data["password_hash"] = _hash_pw(update_data.pop("password"))
+    if "role" in update_data:
+        update_data["role"] = (
+            update_data["role"].value
+            if hasattr(update_data["role"], "value")
+            else update_data["role"]
+        )
+
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", tags=["users"])
+def delete_user(
+    user_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin")),
+):
+    """Soft-delete (deactivate) a user. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    # Ensure at least one super_admin remains active
+    if user.role == "super_admin":
+        active_superadmins = db.query(models.User).filter(
+            models.User.role == "super_admin", models.User.is_active == True
+        ).count()
+        if active_superadmins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot deactivate the last active super_admin")
+    user.is_active = False
+    db.commit()
+    return {"message": "User deactivated", "id": user_id}

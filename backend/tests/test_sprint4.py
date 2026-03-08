@@ -12,7 +12,7 @@ from pydantic import ValidationError
 # ── RAGQueryPayload validation ────────────────────────────────────────────────
 
 # Import must happen after conftest.py sets env vars
-from backend.main import RAGQueryPayload
+from backend.routers.ai_rag import RAGQueryPayload
 
 
 def test_top_k_default_is_5():

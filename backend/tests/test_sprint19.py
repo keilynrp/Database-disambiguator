@@ -35,7 +35,7 @@ _MOCK_CANDIDATES = [
     ),
 ]
 
-_PATCH = "backend.main._authority_resolve_all"
+_PATCH = "backend.routers.authority._authority_resolve_all"
 
 
 def _seed_entities(db_session, brands: list[str]):

@@ -15,7 +15,7 @@ from backend.authority.base import AuthorityCandidate
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-_MOCK_TARGET = "backend.main._authority_resolve_all"
+_MOCK_TARGET = "backend.routers.authority._authority_resolve_all"
 
 _CANDIDATE_WIKIDATA = AuthorityCandidate(
     authority_source="wikidata",
