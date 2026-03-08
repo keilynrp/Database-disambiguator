@@ -1,10 +1,11 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTheme } from "../contexts/ThemeContext";
 import { useDomain } from "../contexts/DomainContext";
-import { useAuth } from "../contexts/AuthContext";
 import { useSidebar } from "./SidebarProvider";
+import NotificationBell from "./NotificationBell";
+import UserMenu from "./UserMenu";
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/": { title: "Master Data Hub", subtitle: "Browse and search your entity database" },
@@ -23,14 +24,8 @@ export default function Header() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { domains, activeDomainId, setActiveDomainId, isLoading } = useDomain();
-  const { logout, user } = useAuth();
   const { toggleMobile } = useSidebar();
-  const router = useRouter();
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
   const page = pageTitles[pathname] || { title: "Dashboard", subtitle: "" };
 
   return (
@@ -77,12 +72,12 @@ export default function Header() {
             )}
           </div>
 
-          <div className="h-6 w-px bg-gray-200 dark:bg-gray-800"></div>
+          <div className="h-6 w-px bg-gray-200 dark:bg-gray-800" />
 
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
-            className="rounded-lg border border-gray-200 p-2 text-gray-500 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "dark" ? (
@@ -95,36 +90,12 @@ export default function Header() {
               </svg>
             )}
           </button>
-          {/* User + logout */}
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 dark:border-gray-700">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-600 dark:bg-blue-600/20 dark:text-blue-400">
-              {user?.username?.[0]?.toUpperCase() ?? "?"}
-            </div>
-            <div className="hidden flex-col leading-tight sm:flex">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                {user?.username ?? "..."}
-              </span>
-              {user?.role && (
-                <span className={`text-xs font-medium ${
-                  user.role === "super_admin" ? "text-red-500" :
-                  user.role === "admin"       ? "text-orange-500" :
-                  user.role === "editor"      ? "text-blue-500" :
-                                               "text-gray-400"
-                }`}>
-                  {user.role.replace("_", " ")}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Sign out"
-              className="ml-1 rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
-          </div>
+
+          {/* Notification bell */}
+          <NotificationBell />
+
+          {/* User profile menu */}
+          <UserMenu />
         </div>
       </div>
     </header>
