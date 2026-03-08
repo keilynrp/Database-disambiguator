@@ -169,7 +169,7 @@ export default function Home() {
       </div>
 
       {/* Activity feed + Entity browser */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_280px]">
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_280px]">
         <div>
           {viewMode === "table" ? <EntityTable /> : <EntityVariantView />}
         </div>

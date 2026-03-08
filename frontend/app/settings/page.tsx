@@ -499,7 +499,7 @@ function UsersTab({ currentUserId, toast }: { currentUserId: number; toast: (msg
             )}
 
             {/* Users table */}
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
                         <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -754,7 +754,7 @@ function WebhooksTab({ toast }: { toast: (msg: string, v?: "success" | "error" |
                 </div>
             )}
 
-            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 {loading ? (
                     <div className="flex justify-center py-10">
                         <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
@@ -762,7 +762,7 @@ function WebhooksTab({ toast }: { toast: (msg: string, v?: "success" | "error" |
                 ) : hooks.length === 0 ? (
                     <p className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No webhooks configured yet</p>
                 ) : (
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[560px] text-sm">
                         <thead className="border-b border-gray-200 dark:border-gray-700">
                             <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                                 <th className="px-5 py-3.5">URL</th>

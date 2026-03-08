@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "../contexts/ThemeContext";
 import { useDomain } from "../contexts/DomainContext";
 import { useAuth } from "../contexts/AuthContext";
+import { useSidebar } from "./SidebarProvider";
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/": { title: "Master Data Hub", subtitle: "Browse and search your entity database" },
@@ -23,6 +24,7 @@ export default function Header() {
   const { theme, toggleTheme } = useTheme();
   const { domains, activeDomainId, setActiveDomainId, isLoading } = useDomain();
   const { logout, user } = useAuth();
+  const { toggleMobile } = useSidebar();
   const router = useRouter();
 
   const handleLogout = () => {
@@ -33,19 +35,31 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center border-b border-gray-200 bg-white/80 shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/80">
-      <div className="flex w-full items-center justify-between px-6">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {page.title}
-          </h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {page.subtitle}
-          </p>
+      <div className="flex w-full items-center justify-between px-4 lg:px-6">
+        <div className="flex items-center gap-3">
+          {/* Mobile hamburger — hidden on desktop */}
+          <button
+            onClick={toggleMobile}
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
+            aria-label="Open navigation"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+              {page.title}
+            </h1>
+            <p className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block">
+              {page.subtitle}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           {/* Domain Selector */}
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Workspace:</span>
+            <span className="hidden text-sm font-medium text-gray-500 dark:text-gray-400 sm:inline">Workspace:</span>
             {isLoading ? (
               <div className="h-9 w-40 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-800"></div>
             ) : (
@@ -86,7 +100,7 @@ export default function Header() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-600 dark:bg-blue-600/20 dark:text-blue-400">
               {user?.username?.[0]?.toUpperCase() ?? "?"}
             </div>
-            <div className="flex flex-col leading-tight">
+            <div className="hidden flex-col leading-tight sm:flex">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {user?.username ?? "..."}
               </span>
