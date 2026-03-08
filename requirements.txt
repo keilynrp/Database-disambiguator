@@ -20,3 +20,5 @@ bcrypt
 cryptography
 # ── Sprint 6: Rate limiting ──────────────────────────────────
 slowapi
+# ── Sprint 40: Enterprise Export ─────────────────────────────
+weasyprint
