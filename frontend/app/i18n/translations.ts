@@ -22,6 +22,7 @@ export const translations = {
         'nav.exec_dashboard': 'Executive Dashboard',
         'nav.domains': 'Domain Registry',
         'nav.integrations': 'Connectors',
+        'nav.audit_log': 'Audit Log',
         'nav.settings': 'Settings',
 
         // Settings
@@ -67,6 +68,7 @@ export const translations = {
         'nav.exec_dashboard': 'Panel Ejecutivo',
         'nav.domains': 'Registro de Dominios',
         'nav.integrations': 'Conectores',
+        'nav.audit_log': 'Registro de Auditoría',
         'nav.settings': 'Configuración',
 
         // Settings
