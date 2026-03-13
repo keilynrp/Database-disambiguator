@@ -4,19 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import UserAvatar from "./UserAvatar";
 
 const ROLE_COLORS: Record<string, { pill: string; label: string }> = {
   super_admin: { pill: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400",    label: "Super Admin" },
   admin:       { pill: "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400", label: "Admin" },
   editor:      { pill: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400", label: "Editor" },
   viewer:      { pill: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400",    label: "Viewer" },
-};
-
-const AVATAR_BG: Record<string, string> = {
-  super_admin: "bg-red-500",
-  admin:       "bg-orange-500",
-  editor:      "bg-blue-500",
-  viewer:      "bg-gray-500",
 };
 
 export default function UserMenu() {
@@ -40,10 +34,8 @@ export default function UserMenu() {
     router.push("/login");
   }
 
-  const initials = user?.username?.[0]?.toUpperCase() ?? "?";
   const role     = user?.role ?? "viewer";
   const roleInfo = ROLE_COLORS[role] ?? ROLE_COLORS.viewer;
-  const avatarBg = AVATAR_BG[role] ?? AVATAR_BG.viewer;
 
   return (
     <div ref={ref} className="relative">
@@ -54,9 +46,7 @@ export default function UserMenu() {
         aria-label="User menu"
       >
         {/* Avatar */}
-        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white ${avatarBg}`}>
-          {initials}
-        </div>
+        <UserAvatar username={user?.username ?? "?"} role={role} avatarUrl={user?.avatar_url} size="sm" />
         {/* Name + role — hidden on small screens */}
         <div className="hidden flex-col items-start leading-tight sm:flex">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -80,9 +70,7 @@ export default function UserMenu() {
         <div className="absolute right-0 top-12 z-50 w-60 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
           {/* User info card */}
           <div className="flex flex-col items-center gap-2 bg-gray-50 px-4 py-5 dark:bg-gray-800/60">
-            <div className={`flex h-14 w-14 items-center justify-center rounded-full text-xl font-bold text-white shadow-sm ${avatarBg}`}>
-              {initials}
-            </div>
+            <UserAvatar username={user?.username ?? "?"} role={role} avatarUrl={user?.avatar_url} size="lg" />
             <div className="text-center">
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 {user?.username ?? "—"}

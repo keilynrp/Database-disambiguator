@@ -8,6 +8,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend import models, schemas
@@ -63,6 +64,60 @@ def change_my_password(
     current_user.password_hash = _hp(payload.new_password)
     db.commit()
     return {"message": "Password updated successfully"}
+
+
+# ── Sprint 58: User Avatar ────────────────────────────────────────────────────
+
+class AvatarPayload(BaseModel):
+    avatar_url: str = Field(max_length=300_000)  # base64 data URL ~200KB image
+
+
+@router.post("/users/me/avatar", response_model=schemas.UserResponse, tags=["users"])
+def upload_my_avatar(
+    payload: AvatarPayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Upload or replace the current user's avatar (base64 data URL)."""
+    if not payload.avatar_url.startswith("data:image/"):
+        raise HTTPException(status_code=422, detail="avatar_url must be a data:image/ URL")
+    current_user.avatar_url = payload.avatar_url
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.delete("/users/me/avatar", response_model=schemas.UserResponse, tags=["users"])
+def delete_my_avatar(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Remove the current user's avatar."""
+    current_user.avatar_url = None
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.get("/users/stats", tags=["users"])
+def user_stats(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin")),
+):
+    """Return user count statistics. Requires super_admin."""
+    from sqlalchemy import func
+    all_users = db.query(models.User).all()
+    by_role: dict[str, int] = {}
+    for u in all_users:
+        by_role[u.role] = by_role.get(u.role, 0) + 1
+    active   = sum(1 for u in all_users if u.is_active)
+    inactive = sum(1 for u in all_users if not u.is_active)
+    return {
+        "total":    len(all_users),
+        "active":   active,
+        "inactive": inactive,
+        "by_role":  by_role,
+    }
 
 
 @router.get("/users", response_model=List[schemas.UserResponse], tags=["users"])
@@ -178,3 +233,19 @@ def delete_user(
     user.is_active = False
     db.commit()
     return {"message": "User deactivated", "id": user_id}
+
+
+@router.post("/users/{user_id}/activate", response_model=schemas.UserResponse, tags=["users"])
+def activate_user(
+    user_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin")),
+):
+    """Reactivate a deactivated user. Requires super_admin."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = True
+    db.commit()
+    db.refresh(user)
+    return user

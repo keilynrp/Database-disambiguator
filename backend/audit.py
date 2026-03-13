@@ -25,13 +25,15 @@ logger = logging.getLogger(__name__)
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-# Paths to skip (auth handshakes, static docs, health probe, read-only)
+# Paths to skip (auth handshakes, static docs, health probe, read-only,
+# and notification-center preference endpoints — Sprint 56)
 _SKIP_PREFIXES = (
     "/auth/",
     "/health",
     "/docs",
     "/openapi",
     "/redoc",
+    "/notifications/center",   # read-state is a user preference, not a data mutation
 )
 
 # Map URL first-segment → human-readable resource type

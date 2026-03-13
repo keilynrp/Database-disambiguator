@@ -9,6 +9,7 @@ interface User {
   role: string;
   email: string | null;
   is_active: boolean;
+  avatar_url?: string | null;
 }
 
 interface AuthContextType {
@@ -17,13 +18,15 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
+  updateAvatarUrl: (url: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]   = useState<User | null>(null);
 
   // Hydrate from localStorage on first render (client-only)
   useEffect(() => {
@@ -37,6 +40,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .then((data) => { if (data) setUser(data); })
         .catch(() => {});
     }
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const stored = localStorage.getItem("ukip_token");
+    if (!stored) return;
+    try {
+      const res = await fetch(`${API_BASE}/users/me`, {
+        headers: { Authorization: `Bearer ${stored}` },
+      });
+      if (res.ok) setUser(await res.json());
+    } catch { /* non-critical */ }
+  }, []);
+
+  const updateAvatarUrl = useCallback((url: string | null) => {
+    setUser(prev => prev ? { ...prev, avatar_url: url } : prev);
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
@@ -67,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, user, isAuthenticated: !!token, login, logout }}>
+    <AuthContext.Provider value={{ token, user, isAuthenticated: !!token, login, logout, refreshUser, updateAvatarUrl }}>
       {children}
     </AuthContext.Provider>
   );

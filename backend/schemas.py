@@ -174,6 +174,7 @@ class UserResponse(BaseModel):
     email:      Optional[str] = None
     role:       str
     is_active:  bool
+    avatar_url: Optional[str] = None
     created_at: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

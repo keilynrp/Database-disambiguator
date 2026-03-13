@@ -29,7 +29,9 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/context":   { title: "Context Engineering", subtitle: "Domain context snapshots, sessions, and tool invocations" },
   "/audit-log": { title: "Audit Log", subtitle: "Complete history of all platform mutations and user activity" },
   "/search":        { title: "Search", subtitle: "Full-text search across entities, authority records, and annotations" },
-  "/entities/link": { title: "Entity Linker", subtitle: "Detect and resolve near-duplicate entities" },
+  "/entities/link":   { title: "Entity Linker",          subtitle: "Detect and resolve near-duplicate entities" },
+  "/notifications":     { title: "Notification Center",  subtitle: "Activity feed with read/unread state and action links" },
+  "/settings/users":   { title: "User Management",       subtitle: "Manage user accounts, roles, and platform access" },
 };
 
 // ── Search result type ─────────────────────────────────────────────────────────

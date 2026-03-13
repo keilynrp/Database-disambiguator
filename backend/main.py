@@ -77,6 +77,12 @@ with database.engine.connect() as _conn:
             _conn.execute(text("ALTER TABLE users ADD COLUMN locked_until VARCHAR"))
             _conn.commit()
 
+    if "users" in _inspector.get_table_names():
+        _cols = [c["name"] for c in _inspector.get_columns("users")]
+        if "avatar_url" not in _cols:
+            _conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url TEXT"))
+            _conn.commit()
+
     if "authority_records" in _inspector.get_table_names():
         _cols = [c["name"] for c in _inspector.get_columns("authority_records")]
         if "resolution_status" not in _cols:

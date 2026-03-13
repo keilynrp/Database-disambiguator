@@ -201,6 +201,7 @@ class User(Base):
     created_at      = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
     failed_attempts = Column(Integer, default=0)
     locked_until    = Column(String, nullable=True)  # ISO datetime string; None = not locked
+    avatar_url      = Column(Text, nullable=True)       # data URL (base64), Sprint 58
 
 
 # ── Authority Resolution Layer ──────────────────────────────────────────────
@@ -367,3 +368,17 @@ class AnalysisContext(Base):
     label            = Column(String, default="")         # user-defined name
     context_snapshot = Column(Text, nullable=False)       # JSON from ContextEngine
     created_at       = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ── Sprint 56: Notification Center read-state ─────────────────────────────────
+
+class UserNotificationState(Base):
+    """
+    One row per user tracking when they last read all their notifications.
+    last_read_at is used as the threshold: audit log entries created after
+    this timestamp are considered "unread".
+    """
+    __tablename__ = "user_notification_states"
+
+    user_id      = Column(Integer, primary_key=True)   # FK users.id
+    last_read_at = Column(DateTime, nullable=True)     # NULL = never read anything

@@ -9,6 +9,7 @@ type Theme = "light" | "dark";
 import { useAuth } from "../contexts/AuthContext";
 import { PageHeader, TabNav, Badge, useToast } from "../components/ui";
 import { apiFetch } from "@/lib/api";
+import AvatarUpload from "../components/AvatarUpload";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 export default function SettingsPage() {
     const { language, setLanguage, t } = useLanguage();
     const { theme, setTheme } = useTheme();
-    const { user } = useAuth();
+    const { user, updateAvatarUrl } = useAuth();
     const { toast } = useToast();
 
     const isSuperAdmin = user?.role === "super_admin";
@@ -87,7 +88,7 @@ export default function SettingsPage() {
                     t={t}
                 />
             )}
-            {tab === "account"        && <AccountTab user={user} toast={toast} />}
+            {tab === "account"        && <AccountTab user={user} updateAvatarUrl={updateAvatarUrl} toast={toast} />}
             {tab === "users"          && isSuperAdmin && <UsersTab currentUserId={user?.id ?? 0} toast={toast} />}
             {tab === "webhooks"       && isAdmin && <WebhooksTab toast={toast} />}
             {tab === "notifications"  && isAdmin && <NotificationsTab toast={toast} />}
@@ -178,7 +179,7 @@ function PreferencesTab({
 
 // ── Tab: Account ─────────────────────────────────────────────────────────────
 
-function AccountTab({ user, toast }: { user: any; toast: (msg: string, v?: any) => void }) {
+function AccountTab({ user, updateAvatarUrl, toast }: { user: any; updateAvatarUrl: (url: string | null) => void; toast: (msg: string, v?: any) => void }) {
     const [currentPw, setCurrentPw] = useState("");
     const [newPw, setNewPw] = useState("");
     const [confirmPw, setConfirmPw] = useState("");
@@ -220,6 +221,18 @@ function AccountTab({ user, toast }: { user: any; toast: (msg: string, v?: any) 
 
     return (
         <div className="space-y-4">
+            {/* Avatar */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <h3 className="mb-4 text-base font-semibold text-gray-900 dark:text-white">Profile Picture</h3>
+                <AvatarUpload
+                    username={user?.username ?? ""}
+                    role={user?.role ?? "viewer"}
+                    currentAvatarUrl={user?.avatar_url}
+                    onUpdated={updateAvatarUrl}
+                    toast={toast}
+                />
+            </div>
+
             {/* Profile info */}
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <h3 className="mb-4 text-base font-semibold text-gray-900 dark:text-white">Profile</h3>
