@@ -32,6 +32,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/entities/link":   { title: "Entity Linker",          subtitle: "Detect and resolve near-duplicate entities" },
   "/notifications":     { title: "Notification Center",  subtitle: "Activity feed with read/unread state and action links" },
   "/settings/users":   { title: "User Management",       subtitle: "Manage user accounts, roles, and platform access" },
+  "/profile":          { title: "My Profile",             subtitle: "Manage your personal information, avatar, and password" },
 };
 
 // ── Search result type ─────────────────────────────────────────────────────────
