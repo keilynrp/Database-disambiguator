@@ -70,6 +70,9 @@ with database.engine.connect() as _conn:
             _conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_source VARCHAR"))
             _conn.execute(text("ALTER TABLE raw_entities ADD COLUMN enrichment_status VARCHAR DEFAULT 'none'"))
             _conn.commit()
+        if "source" not in _cols:
+            _conn.execute(text("ALTER TABLE raw_entities ADD COLUMN source VARCHAR DEFAULT 'user'"))
+            _conn.commit()
 
     if "users" in _inspector.get_table_names():
         _cols = [c["name"] for c in _inspector.get_columns("users")]
@@ -77,15 +80,9 @@ with database.engine.connect() as _conn:
             _conn.execute(text("ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
             _conn.execute(text("ALTER TABLE users ADD COLUMN locked_until VARCHAR"))
             _conn.commit()
-
-    if "users" in _inspector.get_table_names():
-        _cols = [c["name"] for c in _inspector.get_columns("users")]
         if "avatar_url" not in _cols:
             _conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url TEXT"))
             _conn.commit()
-
-    if "users" in _inspector.get_table_names():
-        _cols = [c["name"] for c in _inspector.get_columns("users")]
         if "display_name" not in _cols:
             _conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
             _conn.execute(text("ALTER TABLE users ADD COLUMN bio TEXT"))
@@ -98,12 +95,6 @@ with database.engine.connect() as _conn:
             _conn.execute(text("ALTER TABLE authority_records ADD COLUMN score_breakdown TEXT"))
             _conn.execute(text("ALTER TABLE authority_records ADD COLUMN evidence TEXT"))
             _conn.execute(text("ALTER TABLE authority_records ADD COLUMN merged_sources TEXT"))
-            _conn.commit()
-
-    if "raw_entities" in _inspector.get_table_names():
-        _cols = [c["name"] for c in _inspector.get_columns("raw_entities")]
-        if "source" not in _cols:
-            _conn.execute(text("ALTER TABLE raw_entities ADD COLUMN source VARCHAR DEFAULT 'user'"))
             _conn.commit()
 
     if "audit_logs" in _inspector.get_table_names():
@@ -236,8 +227,8 @@ app.add_middleware(
 
 from starlette.middleware.sessions import SessionMiddleware
 app.add_middleware(
-    SessionMiddleware, 
-    secret_key=os.environ.get("JWT_SECRET_KEY", "fallback_cookie_secret"),
+    SessionMiddleware,
+    secret_key=os.environ.get("SESSION_SECRET_KEY", os.environ.get("JWT_SECRET_KEY", "fallback_cookie_secret")),
     max_age=3600
 )
 

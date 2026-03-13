@@ -41,8 +41,8 @@ def test_search_finds_entity_after_rebuild(client, auth_headers, db_session, ses
     """Seed an entity, rebuild index, then search → found."""
     with session_factory() as db:
         db.execute(text(
-            "INSERT INTO raw_entities (entity_name, sku, brand_capitalized, enrichment_status, source) "
-            "VALUES ('Zythium Widget Pro', 'ZWP-001', 'AcmeCorp', 'none', 'user')"
+            "INSERT INTO raw_entities (primary_label, canonical_id, enrichment_status, source) "
+            "VALUES ('Zythium Widget Pro', 'ZWP-001', 'none', 'user')"
         ))
         db.commit()
 
@@ -64,8 +64,8 @@ def test_search_finds_entity_by_sku(client, auth_headers, db_session, session_fa
     """Prefix search on SKU field."""
     with session_factory() as db:
         db.execute(text(
-            "INSERT INTO raw_entities (entity_name, sku, brand_capitalized, enrichment_status, source) "
-            "VALUES ('Generic Entity', 'UNIQ-XK99', 'BrandX', 'none', 'user')"
+            "INSERT INTO raw_entities (primary_label, canonical_id, enrichment_status, source) "
+            "VALUES ('Generic Entity', 'UNIQ-XK99', 'none', 'user')"
         ))
         db.commit()
 
@@ -73,7 +73,7 @@ def test_search_finds_entity_by_sku(client, auth_headers, db_session, session_fa
 
     resp = client.get("/search?q=UNIQ-XK99", headers=auth_headers)
     assert resp.status_code == 200
-    # SKU lives in the body field — result should surface
+    # canonical_id lives in the body field — result should surface
     assert resp.json()["total"] >= 1
 
 
@@ -81,8 +81,8 @@ def test_search_filter_by_doc_type(client, auth_headers, db_session, session_fac
     """doc_type filter returns only matching resource types."""
     with session_factory() as db:
         db.execute(text(
-            "INSERT INTO raw_entities (entity_name, sku, brand_capitalized, enrichment_status, source) "
-            "VALUES ('FilterTest Entity', 'FT-001', 'FilterBrand', 'none', 'user')"
+            "INSERT INTO raw_entities (primary_label, canonical_id, enrichment_status, source) "
+            "VALUES ('FilterTest Entity', 'FT-001', 'none', 'user')"
         ))
         db.commit()
 

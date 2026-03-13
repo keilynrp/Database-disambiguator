@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+import json
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal, Optional, List
 
 class EntityBase(BaseModel):
@@ -115,6 +116,17 @@ class StoreConnectionCreate(BaseModel):
     sync_direction: _SyncDirection = "bidirectional"
     notes: Optional[str] = None
 
+    @field_validator("custom_headers")
+    @classmethod
+    def validate_custom_headers_json(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            json.loads(v)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"custom_headers must be valid JSON: {e}") from e
+        return v
+
 
 class StoreConnectionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
@@ -127,6 +139,17 @@ class StoreConnectionUpdate(BaseModel):
     is_active: Optional[bool] = None
     sync_direction: Optional[_SyncDirection] = None
     notes: Optional[str] = None
+
+    @field_validator("custom_headers")
+    @classmethod
+    def validate_custom_headers_json(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            json.loads(v)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"custom_headers must be valid JSON: {e}") from e
+        return v
 
 
 class StoreConnectionResponse(BaseModel):

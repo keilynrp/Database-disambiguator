@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import { API_BASE } from "../../lib/api";
 
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
@@ -103,7 +104,7 @@ export default function LoginPage() {
         </div>
 
         <button
-            onClick={() => window.location.href = "http://localhost:8000/sso/login"}
+            onClick={() => window.location.href = `${API_BASE}/sso/login`}
             className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750"
         >
             <svg className="h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">

@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from backend.auth import get_current_user, require_role
 from backend.database import get_db
 from backend.encryption import encrypt
 from backend.routers.deps import _get_active_integration
+from backend.routers.limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,9 @@ def delete_ai_integration(
 # ── RAG ───────────────────────────────────────────────────────────────────────
 
 @router.post("/rag/index")
+@limiter.limit("3/minute")
 def rag_index_catalog(
+    request: Request,
     db: Session = Depends(get_db),
     _: models.User = Depends(require_role("super_admin", "admin")),
 ):

@@ -40,11 +40,11 @@ _PATCH = "backend.routers.authority._authority_resolve_all"
 
 def _seed_entities(db_session, brands: list[str]):
     for brand in brands:
-        db_session.add(models.RawEntity(entity_name=f"Ent {brand}", brand_capitalized=brand))
+        db_session.add(models.RawEntity(primary_label=brand))
     db_session.commit()
 
 
-def _seed_pending_record(db_session, field="brand_capitalized", value="Acme", source="wikidata"):
+def _seed_pending_record(db_session, field="primary_label", value="Acme", source="wikidata"):
     rec = models.AuthorityRecord(
         field_name=field,
         original_value=value,
@@ -71,7 +71,7 @@ class TestBatchResolve:
     _URL = "/authority/resolve/batch"
 
     def _payload(self, **kw):
-        defaults = {"field_name": "brand_capitalized", "entity_type": "general", "limit": 10}
+        defaults = {"field_name": "primary_label", "entity_type": "general", "limit": 10}
         defaults.update(kw)
         return defaults
 
@@ -150,7 +150,7 @@ class TestBatchResolve:
             client.post(self._URL, json=self._payload(limit=5), headers=editor_headers)
         # Verify at least one pending record in DB for the field
         count = db_session.query(models.AuthorityRecord).filter(
-            models.AuthorityRecord.field_name == "brand_capitalized",
+            models.AuthorityRecord.field_name == "primary_label",
             models.AuthorityRecord.status == "pending",
         ).count()
         assert count >= 1

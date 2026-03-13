@@ -89,7 +89,7 @@ class TestMerge:
         assert r.status_code == 200
         result = r.json()
         assert result["id"] == winner.id
-        assert result["sku"] == "KIN-64"    # absorbed from loser
+        assert result["canonical_id"] == "KIN-64"    # sku → canonical_id after Phase 8 refactor
         # loser is gone — use a fresh SELECT (get() throws on deleted identity)
         gone = db_session.query(models.RawEntity).filter_by(id=loser.id).first()
         assert gone is None

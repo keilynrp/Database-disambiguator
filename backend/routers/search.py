@@ -45,9 +45,9 @@ def _rebuild(db: Session) -> int:
         SELECT
             'entity',
             id,
-            COALESCE(entity_name, ''),
-            COALESCE(sku, '') || ' ' ||
-            COALESCE(brand_capitalized, '') || ' ' ||
+            COALESCE(primary_label, ''),
+            COALESCE(canonical_id, '') || ' ' ||
+            COALESCE(secondary_label, '') || ' ' ||
             COALESCE(enrichment_concepts, ''),
             '/entities/' || id
         FROM raw_entities

@@ -51,5 +51,12 @@ def decrypt(value: Optional[str]) -> Optional[str]:
     try:
         from cryptography.fernet import InvalidToken
         return _fernet.decrypt(value.encode()).decode()
-    except (InvalidToken, Exception):
+    except InvalidToken:
+        logger.warning(
+            "decrypt(): InvalidToken — value appears to be plaintext (legacy migration). "
+            "Re-save this record to encrypt it."
+        )
+        return value
+    except Exception as e:
+        logger.error("decrypt(): unexpected error: %s — returning value as-is", e)
         return value

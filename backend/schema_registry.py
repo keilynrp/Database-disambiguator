@@ -1,7 +1,10 @@
 import os
+import logging
 import yaml
 from typing import List, Dict, Optional
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 DOMAINS_DIR = os.path.join(os.path.dirname(__file__), "domains")
 
@@ -40,7 +43,7 @@ class SchemaRegistry:
                             schema = DomainSchema(**data)
                             self.domains[schema.id] = schema
                 except Exception as e:
-                    print(f"Error loading domain schema {filename}: {e}")
+                    logger.error("Error loading domain schema %s: %s", filename, e)
 
     def get_all_domains(self) -> List[DomainSchema]:
         # Return default first if available

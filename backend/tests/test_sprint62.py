@@ -18,9 +18,8 @@ def _seed_entities(db_session, count=5):
     ids = []
     for i in range(count):
         e = models.RawEntity(
-            entity_name=f"Test Entity {i}",
-            brand_capitalized=f"BRAND_{i}",
-            status="draft",
+            primary_label=f"Test Entity {i}",
+            validation_status="pending",
         )
         db_session.add(e)
         db_session.flush()
@@ -36,18 +35,18 @@ class TestBulkUpdate:
         ids = _seed_entities(db_session, 3)
         r = client.post(
             "/entities/bulk-update",
-            json={"ids": ids, "updates": {"status": "active"}},
+            json={"ids": ids, "updates": {"validation_status": "valid"}},
             headers=auth_headers,
         )
         assert r.status_code == 200
         data = r.json()
         assert data["updated"] == 3
-        assert "status" in data["fields"]
+        assert "validation_status" in data["fields"]
         # Verify in DB
         for eid in ids:
             e = db_session.get(models.RawEntity, eid)
             db_session.refresh(e)
-            assert e.status == "active"
+            assert e.validation_status == "valid"
 
     def test_bulk_update_multiple_fields(self, client, auth_headers, db_session):
         ids = _seed_entities(db_session, 2)
@@ -56,8 +55,8 @@ class TestBulkUpdate:
             json={
                 "ids": ids,
                 "updates": {
-                    "brand_capitalized": "UPDATED_BRAND",
-                    "status": "published",
+                    "entity_type": "product",
+                    "validation_status": "invalid",
                 },
             },
             headers=auth_headers,
@@ -67,8 +66,8 @@ class TestBulkUpdate:
         for eid in ids:
             e = db_session.get(models.RawEntity, eid)
             db_session.refresh(e)
-            assert e.brand_capitalized == "UPDATED_BRAND"
-            assert e.status == "published"
+            assert e.entity_type == "product"
+            assert e.validation_status == "invalid"
 
     def test_bulk_update_rejects_unknown_fields(self, client, auth_headers, db_session):
         ids = _seed_entities(db_session, 1)
@@ -85,7 +84,7 @@ class TestBulkUpdate:
         ids = _seed_entities(db_session, 2)
         r = client.post(
             "/entities/bulk-update",
-            json={"ids": ids + [99999], "updates": {"status": "archived"}},
+            json={"ids": ids + [99999], "updates": {"validation_status": "archived"}},
             headers=auth_headers,
         )
         assert r.status_code == 200
@@ -127,7 +126,7 @@ class TestBulkUpdateRBAC:
         ids = _seed_entities(db_session, 1)
         r = client.post(
             "/entities/bulk-update",
-            json={"ids": ids, "updates": {"status": "reviewed"}},
+            json={"ids": ids, "updates": {"validation_status": "reviewed"}},
             headers=editor_headers,
         )
         assert r.status_code == 200

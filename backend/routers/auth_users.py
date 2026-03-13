@@ -143,7 +143,9 @@ def update_my_profile(
 
 
 @router.post("/users/me/password", tags=["users"])
+@limiter.limit("5/minute")
 def change_my_password(
+    request: Request,
     payload: schemas.PasswordChange,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -223,7 +225,9 @@ def list_users(
 
 
 @router.post("/users", response_model=schemas.UserResponse, status_code=201, tags=["users"])
+@limiter.limit("20/hour")
 def create_user(
+    request: Request,
     payload: schemas.UserCreate,
     db: Session = Depends(get_db),
     _: models.User = Depends(require_role("super_admin")),

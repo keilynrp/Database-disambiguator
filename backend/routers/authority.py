@@ -99,7 +99,7 @@ def resolve_authority_batch(
     if not _FIELD_RE.match(field):
         raise HTTPException(status_code=422, detail=f"Invalid field name: {field!r}")
 
-    _entity_cols = {col["name"] for col in inspect(database.engine).get_columns("raw_entities")}
+    _entity_cols = {col["name"] for col in inspect(db.get_bind()).get_columns("raw_entities")}
     if field not in _entity_cols:
         raise HTTPException(status_code=422, detail=f"Field '{field}' not found in entity table")
 
