@@ -170,6 +170,9 @@ _TABLES_TO_CLEAN = [
     "search_index",
     "link_dismissals",
     "user_notification_states",
+    "webhook_deliveries",
+    "webhooks",
+    "scheduled_imports",
     # Note: "users" is intentionally excluded — the super_admin/editor/viewer
     # test accounts must persist across the entire test session.
 ]

@@ -39,6 +39,7 @@ from backend.routers import (
     ingest,
     notifications,
     reports,
+    scheduled_imports,
     search,
     stores,
     webhooks,
@@ -201,6 +202,9 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(enrichment_worker.background_enrichment_worker(get_db_gen()))
 
+    # Start the scheduled-imports scheduler (Sprint 61)
+    scheduled_imports.start_scheduler()
+
     yield  # Server is running
 
 
@@ -230,6 +234,13 @@ app.add_middleware(
     expose_headers=["X-Total-Count"],
 )
 
+from starlette.middleware.sessions import SessionMiddleware
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.environ.get("JWT_SECRET_KEY", "fallback_cookie_secret"),
+    max_age=3600
+)
+
 # ── Register routers ──────────────────────────────────────────────────────────
 
 app.include_router(auth_users.router)
@@ -253,3 +264,4 @@ app.include_router(context.router)
 app.include_router(audit_log.router)
 app.include_router(search.router)
 app.include_router(entity_linker.router)
+app.include_router(scheduled_imports.router)

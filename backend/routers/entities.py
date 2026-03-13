@@ -306,6 +306,52 @@ def delete_entities_bulk(
     return {"deleted": deleted}
 
 
+class _BulkUpdatePayload(BaseModel):
+    ids: List[int] = Field(..., min_length=1, max_length=500)
+    updates: dict = Field(..., description="Fields to update: e.g. {'status': 'active', 'brand_capitalized': 'ACME'}")
+
+
+@router.post("/entities/bulk-update", status_code=200)
+def update_entities_bulk(
+    payload: _BulkUpdatePayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """Batch field updates for a list of entities."""
+    if not payload.ids or not payload.updates:
+        raise HTTPException(status_code=422, detail="ids and updates are required")
+    # Whitelist updatable fields from EntityBase
+    allowed_fields = set(schemas.EntityBase.model_fields.keys())
+    bad_fields = set(payload.updates.keys()) - allowed_fields
+    if bad_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid fields: {', '.join(bad_fields)}. Allowed: {', '.join(sorted(allowed_fields))}",
+        )
+    updated = (
+        db.query(models.RawEntity)
+        .filter(models.RawEntity.id.in_(payload.ids))
+        .update(payload.updates, synchronize_session=False)
+    )
+    _audit(
+        db, "entity.bulk_update",
+        user_id=current_user.id,
+        entity_type="entity",
+        details={
+            "ids": payload.ids[:20],  # limit audit detail size
+            "fields": list(payload.updates.keys()),
+            "updated": updated,
+        },
+    )
+    db.commit()
+    _dispatch_webhook(
+        "entity.bulk_update",
+        {"count": updated, "fields": list(payload.updates.keys())},
+        database.SessionLocal,
+    )
+    return {"updated": updated, "fields": list(payload.updates.keys())}
+
+
 @router.delete("/entities/all")
 def purge_all_entities(
     include_rules: bool = Query(False),

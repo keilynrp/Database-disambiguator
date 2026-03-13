@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(curl:*)",
-      "Bash(d:/DBDesambiguador/.venv/Scripts/python.exe:*)"
+      "Bash(d:/DBDesambiguador/.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(python:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(.venv/Scripts/pip list:*)",
+      "Bash(npx next:*)",
+      "WebFetch(domain:react-demo.tailadmin.com)",
+      "WebSearch",
+      "WebFetch(domain:tailadmin.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(.venv/Scripts/pip install:*)"
     ]
   }
 }

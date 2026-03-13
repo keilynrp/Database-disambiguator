@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend import models
 from backend.adapters.enrichment.openalex import OpenAlexAdapter
 from backend.adapters.enrichment.scholar import ScholarAdapter
+from backend.adapters.enrichment.scopus import ScopusAdapter
 from backend.adapters.enrichment.wos import WebOfScienceAdapter
 from backend.circuit_breaker import CircuitBreaker, CircuitOpenError
 
@@ -15,11 +16,13 @@ logger = logging.getLogger(__name__)
 
 # Enrichment adapters — initialized once at module load
 adapter_wos = WebOfScienceAdapter(api_key=os.environ.get("WOS_API_KEY"))
+adapter_scopus = ScopusAdapter(api_key=os.environ.get("SCOPUS_API_KEY"))
 adapter_openalex = OpenAlexAdapter()
 adapter_scholar = ScholarAdapter(use_free_proxies=True)
 
 # Circuit breakers — trip after 3 consecutive failures; recover after 60 s
 _cb_wos = CircuitBreaker(name="wos", failure_threshold=3, recovery_timeout=60)
+_cb_scopus = CircuitBreaker(name="scopus", failure_threshold=3, recovery_timeout=60)
 _cb_openalex = CircuitBreaker(name="openalex", failure_threshold=3, recovery_timeout=60)
 _cb_scholar = CircuitBreaker(name="scholar", failure_threshold=5, recovery_timeout=120)
 
@@ -99,7 +102,17 @@ def enrich_single_record(db: Session, entity: models.RawEntity) -> models.RawEnt
 
     try:
         # Phase 3: Premium BYOK Priority
-        if adapter_wos.is_active:
+        # Phase 3: Premium BYOK Priority (Scopus -> WoS)
+        if adapter_scopus.is_active:
+            try:
+                results_scopus = _cb_scopus.call(adapter_scopus.search_by_title, query, limit=1)
+                if results_scopus:
+                    enriched_data = results_scopus[0]
+                    source = "Elsevier Scopus"
+            except CircuitOpenError as e:
+                logger.warning(str(e))
+
+        if not enriched_data and adapter_wos.is_active:
             try:
                 results_wos = _cb_wos.call(adapter_wos.search_by_title, query, limit=1)
                 if results_wos:

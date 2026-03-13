@@ -713,232 +713,32 @@ function UsersTab({ currentUserId, toast }: { currentUserId: number; toast: (msg
 
 // ── Tab: Webhooks ─────────────────────────────────────────────────────────────
 
-const ALL_EVENTS = [
-    "upload",
-    "entity.update",
-    "entity.delete",
-    "entity.bulk_delete",
-    "harmonization.apply",
-    "authority.confirm",
-    "authority.reject",
-];
-
-interface WebhookRecord {
-    id: number;
-    url: string;
-    events: string[];
-    is_active: boolean;
-    created_at: string | null;
-    last_triggered_at: string | null;
-    last_status: number | null;
-}
-
 function WebhooksTab({ toast }: { toast: (msg: string, v?: "success" | "error" | "warning" | "info") => void }) {
-    const [hooks, setHooks] = useState<WebhookRecord[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [showForm, setShowForm] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [testing, setTesting] = useState<number | null>(null);
-    const [form, setForm] = useState({ url: "", secret: "", events: [] as string[] });
-
-    const load = async () => {
-        setLoading(true);
-        try {
-            const res = await apiFetch("/webhooks");
-            if (res.ok) setHooks(await res.json());
-        } finally { setLoading(false); }
-    };
-
-    useEffect(() => { load(); }, []);
-
-    const toggleEvent = (ev: string) =>
-        setForm(f => ({
-            ...f,
-            events: f.events.includes(ev) ? f.events.filter(e => e !== ev) : [...f.events, ev],
-        }));
-
-    const handleCreate = async () => {
-        if (!form.url || form.events.length === 0) {
-            toast("URL and at least one event are required", "warning"); return;
-        }
-        setSaving(true);
-        try {
-            const res = await apiFetch("/webhooks", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: form.url, events: form.events, secret: form.secret || null }),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            toast("Webhook created", "success");
-            setForm({ url: "", secret: "", events: [] });
-            setShowForm(false);
-            load();
-        } catch { toast("Failed to create webhook", "error"); }
-        finally { setSaving(false); }
-    };
-
-    const handleToggle = async (hook: WebhookRecord) => {
-        const res = await apiFetch(`/webhooks/${hook.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ is_active: !hook.is_active }),
-        });
-        if (res.ok) { toast(hook.is_active ? "Webhook disabled" : "Webhook enabled", "success"); load(); }
-        else toast("Update failed", "error");
-    };
-
-    const handleDelete = async (id: number) => {
-        const res = await apiFetch(`/webhooks/${id}`, { method: "DELETE" });
-        if (res.ok) { toast("Webhook deleted", "success"); load(); }
-        else toast("Delete failed", "error");
-    };
-
-    const handleTest = async (id: number) => {
-        setTesting(id);
-        try {
-            const res = await apiFetch(`/webhooks/${id}/test`, { method: "POST" });
-            if (res.ok) toast("Test ping sent", "info");
-            else toast("Test failed", "error");
-        } finally { setTesting(null); }
-    };
-
-    const statusColor = (s: number | null) => {
-        if (!s) return "text-gray-400";
-        if (s >= 200 && s < 300) return "text-emerald-600 dark:text-emerald-400";
-        return "text-red-600 dark:text-red-400";
-    };
-
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Outbound HTTP callbacks fired when platform events occur.
-                </p>
-                <button
-                    onClick={() => setShowForm(s => !s)}
-                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                    {showForm ? "Cancel" : "+ New Webhook"}
-                </button>
-            </div>
-
-            {showForm && (
-                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-500/20 dark:bg-blue-500/5">
-                    <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">New Webhook</h3>
-                    <div className="space-y-3">
-                        <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Endpoint URL *</label>
-                            <input
-                                type="url"
-                                value={form.url}
-                                onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
-                                placeholder="https://your-app.com/hook"
-                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Secret (HMAC-SHA256 key, optional)</label>
-                            <input
-                                type="text"
-                                value={form.secret}
-                                onChange={e => setForm(f => ({ ...f, secret: e.target.value }))}
-                                placeholder="my-secret-key"
-                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-400">Events *</label>
-                            <div className="flex flex-wrap gap-2">
-                                {ALL_EVENTS.map(ev => (
-                                    <button
-                                        key={ev}
-                                        onClick={() => toggleEvent(ev)}
-                                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                            form.events.includes(ev)
-                                                ? "bg-blue-600 text-white"
-                                                : "border border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                                        }`}
-                                    >
-                                        {ev}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleCreate}
-                            disabled={saving}
-                            className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            {saving ? "Saving…" : "Create Webhook"}
-                        </button>
+            <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 to-white p-8 shadow-sm dark:border-indigo-500/20 dark:from-indigo-500/5 dark:to-gray-900">
+                <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/15">
+                        <svg className="h-6 w-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Webhooks Management</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            Configure outbound HTTP callbacks, view delivery history, and send test pings.
+                        </p>
                     </div>
                 </div>
-            )}
-
-            <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                {loading ? (
-                    <div className="flex justify-center py-10">
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-                    </div>
-                ) : hooks.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No webhooks configured yet</p>
-                ) : (
-                    <table className="w-full min-w-[560px] text-sm">
-                        <thead className="border-b border-gray-200 dark:border-gray-700">
-                            <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                                <th className="px-5 py-3.5">URL</th>
-                                <th className="px-5 py-3.5">Events</th>
-                                <th className="px-5 py-3.5">Last status</th>
-                                <th className="px-5 py-3.5">Active</th>
-                                <th className="px-5 py-3.5" />
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {hooks.map(hook => (
-                                <tr key={hook.id} className="group">
-                                    <td className="max-w-xs truncate px-5 py-3.5 font-mono text-xs text-gray-700 dark:text-gray-300">{hook.url}</td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex flex-wrap gap-1">
-                                            {hook.events.map(ev => (
-                                                <span key={ev} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">{ev}</span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td className={`px-5 py-3.5 font-mono text-xs ${statusColor(hook.last_status)}`}>
-                                        {hook.last_status ?? "—"}
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <button
-                                            onClick={() => handleToggle(hook)}
-                                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${hook.is_active ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"}`}
-                                        >
-                                            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${hook.is_active ? "translate-x-4" : "translate-x-1"}`} />
-                                        </button>
-                                    </td>
-                                    <td className="px-5 py-3.5">
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                                            <button
-                                                onClick={() => handleTest(hook.id)}
-                                                disabled={testing === hook.id}
-                                                className="rounded-lg px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 disabled:opacity-40 dark:hover:bg-blue-500/10"
-                                            >
-                                                {testing === hook.id ? "…" : "Test"}
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(hook.id)}
-                                                className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                                            >
-                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
+                <a
+                    href="/settings/webhooks"
+                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md"
+                >
+                    Open Webhooks Panel
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                </a>
             </div>
         </div>
     );

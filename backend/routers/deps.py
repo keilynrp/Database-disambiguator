@@ -97,8 +97,10 @@ def _build_disambig_groups(field: str, threshold: int, db: Session):
 def _dispatch_webhook(action: str, payload: dict, db_factory) -> None:
     """Fire-and-forget: send POST to every active webhook subscribed to *action*.
     Runs in a daemon thread so it never blocks the request path.
+    Records a WebhookDelivery row for each attempt.
     """
     def _worker():
+        import time as _time
         with db_factory() as db:
             hooks = db.query(models.Webhook).filter(
                 models.Webhook.is_active == True  # noqa: E712
@@ -117,17 +119,81 @@ def _dispatch_webhook(action: str, payload: dict, db_factory) -> None:
                     headers["X-UKIP-Signature"] = f"sha256={sig}"
                 req = _urllib_req.Request(hook.url, data=body, headers=headers, method="POST")
                 status = 0
+                resp_body = None
+                error_msg = None
+                t0 = _time.monotonic()
                 try:
                     with _urllib_req.urlopen(req, timeout=10) as resp:
                         status = resp.status
+                        resp_body = resp.read(500).decode("utf-8", errors="replace")
                 except Exception as exc:
+                    error_msg = str(exc)[:500]
                     logger.warning("Webhook %s delivery failed: %s", hook.url, exc)
+                latency_ms = int((_time.monotonic() - t0) * 1000)
                 hook.last_triggered_at = datetime.now(timezone.utc)
                 hook.last_status = status
+                # Record delivery
+                delivery = models.WebhookDelivery(
+                    webhook_id=hook.id,
+                    event=action,
+                    url=hook.url,
+                    status_code=status,
+                    response_body=resp_body,
+                    latency_ms=latency_ms,
+                    error=error_msg,
+                    success=200 <= status < 300,
+                )
+                db.add(delivery)
             db.commit()
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
+
+
+def _dispatch_webhook_sync(action: str, payload: dict, hook: models.Webhook, db: Session) -> dict:
+    """Synchronous single-webhook delivery. Used by the test endpoint to return
+    real-time results to the caller.  Returns a dict with delivery details."""
+    import time as _time
+    body = json.dumps({"event": action, "data": payload}).encode()
+    headers = {"Content-Type": "application/json", "X-UKIP-Event": action}
+    if hook.secret:
+        sig = hmac.new(hook.secret.encode(), body, hashlib.sha256).hexdigest()
+        headers["X-UKIP-Signature"] = f"sha256={sig}"
+    req = _urllib_req.Request(hook.url, data=body, headers=headers, method="POST")
+    status = 0
+    resp_body = None
+    error_msg = None
+    t0 = _time.monotonic()
+    try:
+        with _urllib_req.urlopen(req, timeout=10) as resp:
+            status = resp.status
+            resp_body = resp.read(500).decode("utf-8", errors="replace")
+    except Exception as exc:
+        error_msg = str(exc)[:500]
+    latency_ms = int((_time.monotonic() - t0) * 1000)
+    hook.last_triggered_at = datetime.now(timezone.utc)
+    hook.last_status = status
+    delivery = models.WebhookDelivery(
+        webhook_id=hook.id,
+        event=action,
+        url=hook.url,
+        status_code=status,
+        response_body=resp_body,
+        latency_ms=latency_ms,
+        error=error_msg,
+        success=200 <= status < 300,
+    )
+    db.add(delivery)
+    db.commit()
+    db.refresh(delivery)
+    return {
+        "delivery_id": delivery.id,
+        "status_code": status,
+        "latency_ms": latency_ms,
+        "success": delivery.success,
+        "error": error_msg,
+        "response_preview": resp_body,
+    }
 
 
 # ── Store adapter helper ──────────────────────────────────────────────────────

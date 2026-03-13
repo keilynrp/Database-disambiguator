@@ -24,7 +24,7 @@ A domain-agnostic intelligence platform that ingests raw data, harmonizes it, en
 
 ## Why UKIP?
 
-Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 59 development sprints.
+Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 65 development sprints.
 
 **What it does:**
 
@@ -598,19 +598,16 @@ ukip/
 | 57 | Users | User Management UI — `/settings/users` with stats cards, search + filters, inline role assignment, activate/deactivate, create/edit slide-over |
 | 58 | Users | User Avatar Upload — drag & drop, canvas center-crop to 200×200 JPEG, base64 storage, shown in header, menu, and user table |
 | 59 | Users | Personal Profile Management — `display_name` + `bio` fields, `PATCH /users/me/profile`, dedicated `/profile` page (all roles), password strength indicator on all password fields |
+| 60 | Webhooks | Webhooks UI Panel — Dedicated `/settings/webhooks` page: stats cards, expandable webhook cards, inline editing, synchronous test ping with live result, paginated delivery history timeline (`WebhookDelivery` model), `GET /webhooks/stats`, `GET /webhooks/{id}/deliveries` |
+| 61 | Data Sync | Scheduled Imports — `ScheduledImport` model, background scheduler thread (30s tick), CRUD endpoints, manual trigger with live results, interval presets (5min—7d), `/settings/scheduled-imports` management page with stat cards |
+| 62 | Entities | Bulk Entity Editor — `POST /entities/bulk-update` with field whitelist validation, `/entities/bulk-edit` page with multi-select table, batch field picker, bulk delete with confirmation, paginated search |
+| 63 | Enrichment | Scopus Adapter — Elsevier premium enrichment (BYOK institutional API key), cascade integration `enrichment_worker.py` |
+| 64 | Infrastructure| PostgreSQL/MySQL backends — Swapped SQLite for production-grade DBs via `DATABASE_URL` (psycopg2, pymysql, pooled connections), `docker-compose.yml` added for Postgres out-of-the-box |
+| 65 | Authentication | SSO Integration — OAuth2/OIDC integration via Authlib (`/sso/login` & `/sso/callback`), auto-provisioning of users, session middleware injection |
 
 ### Up Next 🔜
 
-| Priority | Sprint | Feature |
-|----------|--------|---------|
-| High | 60 | **Webhooks UI Panel** — Visual webhook manager: create, test, view delivery history and last status |
-| Medium | 61 | **Scheduled Imports** — Cron-based automated ingestion from configured store connections |
-| Medium | 62 | **Bulk Entity Editor** — Multi-select in the entity list, batch field updates, bulk delete |
-| Low | 63 | **Scopus Adapter** — Elsevier premium enrichment (BYOK institutional API key) |
-| Low | 64 | **PostgreSQL/MySQL backends** — Swap SQLite for production-grade database via `DATABASE_URL` env var |
-| Low | 65 | **SSO Integration** — OAuth2/SAML for institutional deployments |
-
-See [EVOLUTION_STRATEGY.md](docs/EVOLUTION_STRATEGY.md) for the full platform vision and phased roadmap (Phases 6–11).
+*See [EVOLUTION_STRATEGY.md](docs/EVOLUTION_STRATEGY.md) for the full platform vision and phased roadmap (Phases 6–11).*
 
 ---
 

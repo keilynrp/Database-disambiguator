@@ -10,6 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.responses import RedirectResponse
+from authlib.integrations.starlette_client import OAuth
+import os
 
 from backend import models, schemas
 from backend.auth import authenticate_user, create_access_token, get_current_user, require_role
@@ -41,6 +44,72 @@ async def login(
         )
     token = create_access_token(subject=user.username, role=user.role)
     return {"access_token": token, "token_type": "bearer"}
+
+
+# ── SSO Integration (Sprint 65) ───────────────────────────────────────────────
+
+oauth = OAuth()
+oauth.register(
+    name='sso',
+    client_id=os.environ.get('SSO_CLIENT_ID', ''),
+    client_secret=os.environ.get('SSO_CLIENT_SECRET', ''),
+    server_metadata_url=os.environ.get('SSO_METADATA_URL', 'https://accounts.google.com/.well-known/openid-configuration'),
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+@router.get("/sso/login", tags=["sso"])
+async def sso_login(request: Request):
+    """Initiates the OAuth2 / OIDC login flow."""
+    redirect_uri = str(request.url_for('sso_callback'))
+    return await oauth.sso.authorize_redirect(request, redirect_uri)
+
+@router.get("/sso/callback", tags=["sso"])
+async def sso_callback(request: Request, db: Session = Depends(get_db)):
+    """OAuth2 callback handler."""
+    try:
+        token = await oauth.sso.authorize_access_token(request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"SSO authentication failed: {e}")
+
+    user_info = token.get('userinfo')
+    if not user_info:
+        user_info = await oauth.sso.userinfo(token=token)
+        
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Failed to fetch user info from SSO provider")
+
+    email = user_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="SSO provider did not return an email address")
+
+    # Find or create user
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        # Auto-provision a viewer account
+        import uuid
+        from backend.auth import hash_password
+        dummy_pass = str(uuid.uuid4())
+        
+        user = models.User(
+            username=email.split("@")[0] + "_" + str(uuid.uuid4())[:6],
+            email=email,
+            password_hash=hash_password(dummy_pass),
+            role="viewer",
+            display_name=user_info.get("name"),
+            avatar_url=user_info.get("picture"),
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is deactivated")
+
+    # Generate JWT
+    access_token = create_access_token(subject=user.username, role=user.role)
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    return RedirectResponse(url=f"{frontend_url}/login?token={access_token}")
 
 
 # ── User Management (RBAC) ────────────────────────────────────────────────────

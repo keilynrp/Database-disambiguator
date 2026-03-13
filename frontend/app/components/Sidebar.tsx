@@ -256,6 +256,36 @@ const navSections: NavSection[] = [
         ),
         translationKey: "nav.settings",
       },
+      {
+        label: "Bulk Editor",
+        href: "/entities/bulk-edit",
+        icon: (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+          </svg>
+        ),
+        translationKey: "nav.bulk_editor",
+      },
+      {
+        label: "Webhooks",
+        href: "/settings/webhooks",
+        icon: (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+        ),
+        translationKey: "nav.webhooks",
+      },
+      {
+        label: "Scheduled Imports",
+        href: "/settings/scheduled-imports",
+        icon: (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+        translationKey: "nav.scheduled_imports",
+      },
     ],
   },
 ];

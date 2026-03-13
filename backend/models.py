@@ -255,6 +255,25 @@ class Webhook(Base):
     last_status       = Column(Integer, nullable=True)         # HTTP status of last delivery
 
 
+class WebhookDelivery(Base):
+    """
+    Sprint 60: Logs each outbound webhook delivery attempt.
+    Enables the delivery history timeline in the Webhooks UI Panel.
+    """
+    __tablename__ = "webhook_deliveries"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    webhook_id  = Column(Integer, index=True, nullable=False)   # FK webhooks.id
+    event       = Column(String, nullable=False)                # e.g. "upload", "entity.delete"
+    url         = Column(String, nullable=False)                # destination URL at time of delivery
+    status_code = Column(Integer, nullable=True)                # HTTP status (0 = network error)
+    response_body = Column(Text, nullable=True)                 # first 500 chars of response
+    latency_ms  = Column(Integer, nullable=True)                # round-trip time in milliseconds
+    error       = Column(String, nullable=True)                 # exception message if delivery failed
+    success     = Column(Boolean, default=False)                # True if 2xx
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class LinkDismissal(Base):
     """Stores entity pairs the user has explicitly marked as 'not a duplicate'."""
     __tablename__ = "link_dismissals"
@@ -384,3 +403,27 @@ class UserNotificationState(Base):
 
     user_id      = Column(Integer, primary_key=True)   # FK users.id
     last_read_at = Column(DateTime, nullable=True)     # NULL = never read anything
+
+
+# ── Sprint 61: Scheduled Imports ───────────────────────────────────────────────
+
+class ScheduledImport(Base):
+    """
+    Cron-based automated ingestion from a configured store connection.
+    interval_minutes is a simple interval approach (no full cron parser needed).
+    """
+    __tablename__ = "scheduled_imports"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    store_id        = Column(Integer, index=True, nullable=False)  # FK store_connections.id
+    name            = Column(String, nullable=False)               # human label
+    interval_minutes = Column(Integer, nullable=False, default=60) # run every N minutes
+    is_active       = Column(Boolean, default=True)
+    last_run_at     = Column(DateTime, nullable=True)
+    next_run_at     = Column(DateTime, nullable=True)
+    last_status     = Column(String, nullable=True)               # success | error | running
+    last_result     = Column(Text, nullable=True)                 # JSON with result details
+    total_runs      = Column(Integer, default=0)
+    total_entities_imported = Column(Integer, default=0)
+    created_at      = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
