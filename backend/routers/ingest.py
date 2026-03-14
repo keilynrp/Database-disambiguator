@@ -1,6 +1,8 @@
 """
 Data ingestion and export endpoints.
   POST /upload
+  POST /upload/preview
+  POST /upload/suggest-mapping
   POST /analyze
   GET  /export
 """
@@ -9,13 +11,16 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import tempfile
 import xml.etree.ElementTree as ET
+from typing import List, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -27,7 +32,7 @@ from backend.parsers.bibtex_parser import parse_bibtex
 from backend.parsers.ris_parser import parse_ris
 from backend.parsers.science_mapper import science_record_to_entity
 from backend.routers.column_maps import COLUMN_MAPPING, EXPORT_COLUMN_MAPPING
-from backend.routers.deps import _audit, _dispatch_webhook
+from backend.routers.deps import _audit, _dispatch_webhook, _get_active_integration
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,85 @@ _SCIENCE_AUTO_MAPPING = {
     "year":     "creation_date",
     "journal":  "secondary_label",
 }
+
+# Human-readable descriptions for the LLM prompt
+_FIELD_DESCRIPTIONS = {
+    "primary_label":             "main name/title of the entity (product name, paper title, person name)",
+    "secondary_label":           "secondary label (brand, author, publisher, organization)",
+    "canonical_id":              "unique identifier (SKU, DOI, ISBN, GTIN, barcode, record ID)",
+    "entity_type":               "type or category of the entity (product, paper, person, organization…)",
+    "domain":                    "knowledge domain (science, healthcare, business, education…)",
+    "enrichment_doi":            "Digital Object Identifier (DOI)",
+    "enrichment_citation_count": "number of citations (integer)",
+    "enrichment_concepts":       "keywords, topics, or concepts (comma-separated)",
+    "enrichment_source":         "source or database that provided enrichment data",
+    "creation_date":             "date the entity was created or published",
+    "validation_status":         "validation or review status of the record",
+}
+
+_VALID_UKIP_FIELDS: set[str] = set(_FIELD_DESCRIPTIONS.keys())
+
+_SUGGEST_SYSTEM_PROMPT = (
+    "You are a data-field mapper for UKIP (Universal Knowledge Intelligence Platform).\n"
+    "Given a list of column names from a user-uploaded file and up to 3 sample values per "
+    "column, decide which UKIP model field each column best maps to.\n\n"
+    "VALID UKIP FIELDS:\n"
+    + "\n".join(f"  - {k}: {v}" for k, v in _FIELD_DESCRIPTIONS.items())
+    + "\n\nRULES:\n"
+    "1. Return ONLY a raw JSON object — no markdown, no explanation.\n"
+    "2. Keys = original column names exactly as given.\n"
+    "3. Values = one of the valid UKIP field names above, or null if no clear match.\n"
+    "4. Avoid mapping two columns to the same field unless the first one is clearly wrong.\n"
+    "5. When in doubt, use null rather than a wrong guess.\n"
+)
+
+
+def _parse_llm_mapping(raw: str, valid_fields: set[str]) -> dict[str, Optional[str]]:
+    """
+    Robustly extract a {column: field_or_null} dict from an LLM text response.
+    Tries direct JSON parse first, then regex extraction of the first {...} block.
+    Values not in valid_fields are coerced to None.
+    """
+    text = raw.strip()
+    # Strip markdown code fences if present
+    text = re.sub(r"^```[a-z]*\n?", "", text)
+    text = re.sub(r"\n?```$", "", text)
+    text = text.strip()
+
+    parsed: dict = {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        # Try to find the first {...} block in the response
+        m = re.search(r"\{[\s\S]+\}", text)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    result = {}
+    for k, v in parsed.items():
+        if not isinstance(k, str):
+            continue
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            result[k] = None
+        elif isinstance(v, str) and v.strip() in valid_fields:
+            result[k] = v.strip()
+        else:
+            result[k] = None  # LLM hallucinated an unknown field name
+
+    return result
+
+
+# ── Pydantic model for suggest-mapping ────────────────────────────────────────
+
+class SuggestMappingRequest(BaseModel):
+    columns:     List[str]        = Field(min_length=1, max_length=50)
+    sample_rows: List[dict]       = Field(default=[], max_length=10)
 
 
 def _parse_file_to_records(filename: str, contents: bytes) -> tuple[str, list[dict]]:
@@ -102,6 +186,77 @@ def _parse_file_to_records(filename: str, contents: bytes) -> tuple[str, list[di
         return "rdf", list(entities.values())
     else:
         raise HTTPException(status_code=400, detail="Unsupported file format for tabular parsing.")
+
+
+# ── LLM-assisted mapping suggestion (Sprint 74) ───────────────────────────────
+
+@router.post("/upload/suggest-mapping")
+def suggest_column_mapping(
+    payload: SuggestMappingRequest,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_role("super_admin", "admin", "editor")),
+):
+    """
+    Sprint 74 — LLM-Assisted Column Mapping.
+    Accepts column names + sample rows, asks the active LLM to suggest the best
+    UKIP model field for each column, and returns:
+      {
+        "mapping":   {"ColName": "ukip_field" | null, ...},
+        "provider":  "openai" | "anthropic" | ... | null,
+        "available": true | false,
+      }
+
+    If no AI integration is active, returns available=false with an empty mapping
+    (200 OK — the frontend degrades gracefully).
+    """
+    integration = _get_active_integration(db)
+    if not integration:
+        return {"mapping": {col: None for col in payload.columns}, "provider": None, "available": False}
+
+    # Build adapter (same factory used by the RAG engine)
+    from backend.analytics.rag_engine import _build_adapter
+    adapter = _build_adapter(integration)
+    if not adapter:
+        return {"mapping": {col: None for col in payload.columns}, "provider": None, "available": False}
+
+    # Collect up to 3 sample values per column
+    samples: dict[str, list] = {col: [] for col in payload.columns}
+    for row in payload.sample_rows[:10]:
+        for col in payload.columns:
+            raw_val = row.get(col)
+            if raw_val is not None and str(raw_val).strip() and len(samples[col]) < 3:
+                samples[col].append(str(raw_val).strip()[:80])
+
+    # Format user prompt
+    lines = ["Map the following columns to UKIP fields:\n"]
+    for col in payload.columns:
+        sv = samples[col]
+        sample_str = ", ".join(f'"{v}"' for v in sv) if sv else "(no samples)"
+        lines.append(f'  "{col}": samples → {sample_str}')
+    user_prompt = "\n".join(lines)
+
+    try:
+        raw_response = adapter.chat(
+            system_prompt=_SUGGEST_SYSTEM_PROMPT,
+            user_query=user_prompt,
+            context_chunks=[],
+        )
+    except Exception as exc:
+        logger.warning("LLM suggest-mapping error: %s", exc)
+        return {"mapping": {col: None for col in payload.columns}, "provider": adapter.provider_name, "available": True}
+
+    mapping = _parse_llm_mapping(raw_response, _VALID_UKIP_FIELDS)
+
+    # Fill any missing columns (LLM may have omitted some)
+    for col in payload.columns:
+        if col not in mapping:
+            mapping[col] = None
+
+    return {
+        "mapping":   mapping,
+        "provider":  adapter.provider_name,
+        "available": True,
+    }
 
 
 # ── Preview endpoint (Sprint 71) ───────────────────────────────────────────────

@@ -206,6 +206,48 @@ function StepMapping({
     mapping: Record<string, string>;
     onMappingChange: (m: Record<string, string>) => void;
 }) {
+    const [suggesting, setSuggesting] = useState(false);
+    const [aiProvider, setAiProvider] = useState<string | null>(null);
+    const [aiError, setAiError] = useState<string | null>(null);
+
+    async function handleAISuggest() {
+        setSuggesting(true);
+        setAiError(null);
+        try {
+            const res = await apiFetch("/upload/suggest-mapping", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    columns: preview.columns,
+                    sample_rows: preview.sample_rows,
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Suggestion failed" }));
+                setAiError(err.detail ?? "AI suggestion failed");
+                return;
+            }
+            const data = await res.json();
+            if (!data.available) {
+                setAiError("No AI provider configured. Add one in Settings → AI Language Models.");
+                return;
+            }
+            // Merge suggestions: only fill columns that are currently unmapped
+            const merged = { ...mapping };
+            for (const [col, field] of Object.entries(data.mapping as Record<string, string | null>)) {
+                if (!merged[col] && field) {
+                    merged[col] = field;
+                }
+            }
+            onMappingChange(merged);
+            setAiProvider(data.provider ?? null);
+        } catch (e: any) {
+            setAiError(e.message ?? "Network error");
+        } finally {
+            setSuggesting(false);
+        }
+    }
+
     const matched = Object.values(mapping).filter(Boolean).length;
     const total = preview.columns.length;
 
@@ -248,7 +290,7 @@ function StepMapping({
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
                 <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">
                     {matched} / {total} mapped
                 </span>
@@ -260,7 +302,63 @@ function StepMapping({
                         {total - matched} unmatched — will go to Extended Attributes
                     </span>
                 )}
+
+                {/* AI Suggest button */}
+                <button
+                    onClick={handleAISuggest}
+                    disabled={suggesting}
+                    className="ml-auto flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
+                    title="Ask the active AI model to suggest mappings for unmatched columns"
+                >
+                    {suggesting ? (
+                        <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                    ) : (
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                        </svg>
+                    )}
+                    {suggesting ? "Asking AI…" : "AI Suggest"}
+                </button>
             </div>
+
+            {/* AI feedback */}
+            {aiProvider && !aiError && (
+                <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 dark:border-violet-500/20 dark:bg-violet-500/5">
+                    <svg className="h-4 w-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <p className="text-xs font-medium text-violet-700 dark:text-violet-300">
+                        AI suggestions applied · suggested by <span className="font-bold">{aiProvider}</span>
+                    </p>
+                    <button
+                        onClick={() => setAiProvider(null)}
+                        className="ml-auto text-violet-400 hover:text-violet-600 dark:hover:text-violet-300"
+                    >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+            {aiError && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/20 dark:bg-amber-500/5">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">{aiError}</p>
+                    <button
+                        onClick={() => setAiError(null)}
+                        className="ml-auto text-amber-400 hover:text-amber-600"
+                    >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             <div className="overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800">
                 <table className="w-full text-sm">
