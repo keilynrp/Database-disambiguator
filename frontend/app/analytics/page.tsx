@@ -389,6 +389,30 @@ export default function AnalyticsPage() {
                 </Link>
             </div>
 
+            {/* Domain Comparison CTA */}
+            <div className="flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50 px-5 py-3.5 dark:border-teal-900/40 dark:bg-teal-900/10">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400">
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                        </svg>
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium text-teal-900 dark:text-teal-200">Domain Comparison</p>
+                        <p className="text-xs text-teal-600 dark:text-teal-400">Compare KPIs, entity types, concepts, and citation impact across 2–4 domains side by side</p>
+                    </div>
+                </div>
+                <Link
+                    href="/analytics/compare"
+                    className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 transition-colors flex-shrink-0"
+                >
+                    Compare
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                </Link>
+            </div>
+
             {/* ═══ SECTION 2: AI Knowledge Hub — Predictive Enrichment ═══════════ */}
             <SectionDivider label="UKIP Knowledge Hub — Semantic Enrichment" />
 

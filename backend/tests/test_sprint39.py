@@ -10,11 +10,10 @@ from backend import models
 def _seed_entities(db, n=5):
     """Insert n raw entities with varied data."""
     years = ["2021-01-01", "2022-03-15", "2023-06-01", "2023-08-20", "2024-02-01"]
-    brands = ["Alpha", "Beta", "Alpha", "Gamma", "Beta"]
     for i in range(n):
         db.add(models.RawEntity(
-            entity_name=f"Entity {i}",
-            brand_capitalized=brands[i % len(brands)],
+            primary_label=f"Entity {i}",
+            domain="default",
             creation_date=years[i % len(years)],
             enrichment_status="completed" if i % 2 == 0 else "none",
             enrichment_citation_count=10 * (i + 1) if i % 2 == 0 else None,
