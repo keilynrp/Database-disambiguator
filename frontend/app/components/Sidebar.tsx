@@ -170,6 +170,16 @@ const navSections: NavSection[] = [
         translationKey: "nav.reports",
       },
       {
+        label: "Scheduled Reports",
+        href: "/reports/scheduled",
+        icon: (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+        translationKey: "nav.scheduled_reports",
+      },
+      {
         label: "ROI Calculator",
         href: "/analytics/roi",
         icon: (

@@ -31,7 +31,8 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/audit-log": { title: "Audit Log", subtitle: "Complete history of all platform mutations and user activity" },
   "/search":        { title: "Search", subtitle: "Full-text search across entities, authority records, and annotations" },
   "/entities/link":   { title: "Entity Linker",          subtitle: "Detect and resolve near-duplicate entities" },
-  "/notifications":     { title: "Notification Center",  subtitle: "Activity feed with read/unread state and action links" },
+  "/notifications":       { title: "Notification Center",   subtitle: "Activity feed with read/unread state and action links" },
+  "/reports/scheduled":  { title: "Scheduled Reports",    subtitle: "Recurring report delivery via email — PDF, Excel, and HTML" },
   "/settings/users":   { title: "User Management",       subtitle: "Manage user accounts, roles, and platform access" },
   "/profile":          { title: "My Profile",             subtitle: "Manage your personal information, avatar, and password" },
 };

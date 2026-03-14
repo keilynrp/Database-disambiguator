@@ -413,3 +413,30 @@ class ScheduledImport(Base):
     total_entities_imported = Column(Integer, default=0)
     created_at      = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
+# ── Sprint 79: Scheduled Reports ──────────────────────────────────────────────
+
+class ScheduledReport(Base):
+    """
+    Periodic email delivery of generated reports (PDF / Excel / HTML).
+    The background scheduler thread checks every 60 s for due reports and
+    sends them as email attachments using the NotificationSettings SMTP config.
+    """
+    __tablename__ = "scheduled_reports"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    name             = Column(String(200), nullable=False)
+    domain_id        = Column(String(64), default="default")
+    format           = Column(String(10), default="pdf")     # pdf | excel | html
+    sections         = Column(Text, default="[]")            # JSON list of section ids
+    report_title     = Column(String(200), nullable=True)
+    interval_minutes = Column(Integer, nullable=False, default=1440)  # 1440 = daily
+    recipient_emails = Column(Text, default="[]")            # JSON list of addresses
+    is_active        = Column(Boolean, default=True)
+    last_run_at      = Column(DateTime, nullable=True)
+    next_run_at      = Column(DateTime, nullable=True)
+    last_status      = Column(String(20), default="pending") # pending | success | error
+    last_error       = Column(Text, nullable=True)
+    total_sent       = Column(Integer, default=0)
+    created_at       = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
