@@ -173,6 +173,7 @@ _TABLES_TO_CLEAN = [
     "webhook_deliveries",
     "webhooks",
     "scheduled_imports",
+    "entity_relationships",
     # Note: "users" is intentionally excluded — the super_admin/editor/viewer
     # test accounts must persist across the entire test session.
 ]

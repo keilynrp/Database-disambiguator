@@ -285,6 +285,18 @@ class UniversalEntity(Base):
 # Alias for backward compatibility
 RawEntity = UniversalEntity
 
+
+class EntityRelationship(Base):
+    __tablename__ = "entity_relationships"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    source_id   = Column(Integer, index=True)   # FK to raw_entities.id
+    target_id   = Column(Integer, index=True)   # FK to raw_entities.id
+    relation_type = Column(String, index=True)  # cites | authored-by | belongs-to | related-to
+    weight      = Column(Float, default=1.0)
+    notes       = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 class NormalizationRule(Base):
     __tablename__ = "normalization_rules"
     

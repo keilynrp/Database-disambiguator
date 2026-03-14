@@ -38,6 +38,7 @@ from backend.routers import (
     harmonization,
     ingest,
     notifications,
+    relationships,
     reports,
     scheduled_imports,
     search,
@@ -328,3 +329,4 @@ app.include_router(audit_log.router)
 app.include_router(search.router)
 app.include_router(entity_linker.router)
 app.include_router(scheduled_imports.router)
+app.include_router(relationships.router)

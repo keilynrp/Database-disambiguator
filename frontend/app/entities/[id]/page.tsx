@@ -7,6 +7,8 @@ import { apiFetch } from "@/lib/api";
 import { PageHeader, TabNav, Badge, useToast } from "../../components/ui";
 import MonteCarloChart from "../../components/MonteCarloChart";
 import AnnotationThread from "../../components/AnnotationThread";
+import EntityGraph from "../../components/EntityGraph";
+import RelationshipManager from "../../components/RelationshipManager";
 
 interface Entity {
     id: number;
@@ -50,7 +52,7 @@ interface AuthorityRecord {
     resolution_status: string;
 }
 
-type Tab = "overview" | "enrichment" | "authority" | "comments";
+type Tab = "overview" | "enrichment" | "authority" | "graph" | "comments";
 
 const CORE_FIELDS: (keyof Entity)[] = [
     "entity_name", "brand_capitalized", "model", "sku", "variant",
@@ -116,6 +118,9 @@ export default function EntityDetailPage() {
 
     // Comments tab
     const [commentCount, setCommentCount] = useState<number>(0);
+
+    // Graph tab
+    const [graphKey, setGraphKey] = useState(0);
 
     const fetchEntity = useCallback(async () => {
         setLoading(true);
@@ -329,6 +334,7 @@ export default function EntityDetailPage() {
                     { id: "overview", label: "Overview" },
                     { id: "enrichment", label: "Enrichment" },
                     { id: "authority", label: "Authority" },
+                    { id: "graph", label: "Graph" },
                     { id: "comments", label: "Comments", badge: commentCount > 0 ? commentCount : undefined },
                 ]}
                 activeTab={tab}
@@ -463,6 +469,27 @@ export default function EntityDetailPage() {
                             )}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Graph ── */}
+            {tab === "graph" && (
+                <div className="space-y-6">
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Relationship Graph
+                        </h3>
+                        <EntityGraph key={graphKey} entityId={entity.id} />
+                    </div>
+                    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Manage Relationships
+                        </h3>
+                        <RelationshipManager
+                            entityId={entity.id}
+                            onRefreshGraph={() => setGraphKey((k) => k + 1)}
+                        />
+                    </div>
                 </div>
             )}
 

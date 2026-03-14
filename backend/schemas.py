@@ -464,3 +464,55 @@ class AnalysisContextResponse(BaseModel):
     notes:            Optional[str]
     pinned:           bool
     created_at:       datetime
+
+
+# ── Entity Relationship Graph ──────────────────────────────────────────────────
+
+VALID_RELATION_TYPES = {"cites", "authored-by", "belongs-to", "related-to"}
+
+class EntityRelationshipCreate(BaseModel):
+    target_id:     int   = Field(..., ge=1)
+    relation_type: str   = Field(..., max_length=50)
+    weight:        float = Field(default=1.0, ge=0.0, le=10.0)
+    notes:         str | None = Field(default=None, max_length=500)
+
+    @field_validator("relation_type")
+    @classmethod
+    def validate_relation_type(cls, v: str) -> str:
+        if v not in VALID_RELATION_TYPES:
+            raise ValueError(f"relation_type must be one of {VALID_RELATION_TYPES}")
+        return v
+
+
+class EntityRelationshipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id:            int
+    source_id:     int
+    target_id:     int
+    relation_type: str
+    weight:        float
+    notes:         str | None
+    created_at:    datetime
+
+
+class GraphNode(BaseModel):
+    id:          int
+    label:       str
+    entity_type: str | None
+    domain:      str | None
+    is_center:   bool
+
+
+class GraphEdge(BaseModel):
+    id:            int
+    source:        int
+    target:        int
+    relation_type: str
+    weight:        float
+
+
+class EntityGraphResponse(BaseModel):
+    center_id: int
+    depth:     int
+    nodes:     list[GraphNode]
+    edges:     list[GraphEdge]
