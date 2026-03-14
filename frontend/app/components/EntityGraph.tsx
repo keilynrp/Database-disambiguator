@@ -27,6 +27,25 @@ interface GraphData {
     edges: GraphEdge[];
 }
 
+interface GraphMetrics {
+    entity_id: number;
+    primary_label: string;
+    degree: {
+        in_degree: number;
+        out_degree: number;
+        total_degree: number;
+    };
+    pagerank: {
+        score: number;
+        rank: number | null;
+        total_nodes: number;
+    };
+    component: {
+        component_id: number | null;
+        size: number;
+    };
+}
+
 interface Position { x: number; y: number; }
 
 const RELATION_COLORS: Record<string, string> = {
@@ -71,6 +90,7 @@ export default function EntityGraph({ entityId }: { entityId: number }) {
     const [depth, setDepth] = useState<1 | 2>(1);
     const [hovered, setHovered] = useState<number | null>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+    const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
     const svgRef = useRef<SVGSVGElement>(null);
 
     const W = 600;
@@ -78,11 +98,17 @@ export default function EntityGraph({ entityId }: { entityId: number }) {
 
     useEffect(() => {
         setLoading(true);
-        apiFetch(`/entities/${entityId}/graph?depth=${depth}`)
-            .then((r) => r.ok ? r.json() : null)
-            .then((data) => setGraph(data))
-            .catch(() => setGraph(null))
-            .finally(() => setLoading(false));
+        Promise.all([
+            apiFetch(`/entities/${entityId}/graph?depth=${depth}`)
+                .then((r) => r.ok ? r.json() : null)
+                .catch(() => null),
+            apiFetch(`/entities/${entityId}/graph/metrics`)
+                .then((r) => r.ok ? r.json() : null)
+                .catch(() => null),
+        ]).then(([graphData, metricsData]) => {
+            setGraph(graphData);
+            setMetrics(metricsData);
+        }).finally(() => setLoading(false));
     }, [entityId, depth]);
 
     const positions = usePositions(graph?.nodes ?? [], W, H);
@@ -105,7 +131,9 @@ export default function EntityGraph({ entityId }: { entityId: number }) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
                 <p className="text-sm text-gray-500 dark:text-gray-400">No relationships yet</p>
-                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Add relationships below to build the graph</p>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    No relationships — add one below to see graph metrics.
+                </p>
             </div>
         );
     }
@@ -287,6 +315,43 @@ export default function EntityGraph({ entityId }: { entityId: number }) {
                     </div>
                 ))}
             </div>
+
+            {/* Metrics strip */}
+            {metrics && (
+                <div className="mt-2 grid grid-cols-3 divide-x divide-gray-100 rounded-xl border border-gray-100 bg-gray-50 dark:divide-gray-800 dark:border-gray-800 dark:bg-gray-900/40">
+                    <div className="px-4 py-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            Degree
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                            ↓ {metrics.degree.in_degree} / ↑ {metrics.degree.out_degree}
+                        </p>
+                    </div>
+                    <div className="px-4 py-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            PageRank
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                            {metrics.pagerank.score.toFixed(4)}
+                            {metrics.pagerank.rank != null && (
+                                <span className="ml-1.5 text-xs font-normal text-gray-500 dark:text-gray-400">
+                                    #{metrics.pagerank.rank} of {metrics.pagerank.total_nodes}
+                                </span>
+                            )}
+                        </p>
+                    </div>
+                    <div className="px-4 py-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            Component
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                            {metrics.component.component_id != null
+                                ? `Component ${metrics.component.component_id} · ${metrics.component.size} nodes`
+                                : "—"}
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

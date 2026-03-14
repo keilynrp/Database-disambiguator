@@ -4,15 +4,21 @@ Sprint 70 — Entity Relationship Graph
   GET  /entities/{id}/relationships    — list direct relationships
   POST /entities/{id}/relationships    — create a new relationship
   DELETE /relationships/{rel_id}       — delete a relationship
+
+Sprint 73 — Graph Analytics
+  GET  /entities/{id}/graph/metrics    — degree, PageRank, component info
+  GET  /graph/stats                    — global graph statistics
+  GET  /graph/path                     — BFS shortest path
+  GET  /graph/components               — list connected components
 """
 import logging
-from collections import deque
+from collections import defaultdict, deque
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.orm import Session
 
-from backend import models, schemas
+from backend import graph_analytics, models, schemas
 from backend.auth import get_current_user, require_role
 from backend.database import get_db
 
@@ -26,6 +32,188 @@ def _get_entity_or_404(entity_id: int, db: Session) -> models.RawEntity:
     if not entity:
         raise HTTPException(status_code=404, detail=f"Entity {entity_id} not found")
     return entity
+
+
+@router.get("/graph/stats")
+def get_graph_stats(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """Sprint 73 — Global graph statistics: nodes, edges, components, top PageRank."""
+    edges = graph_analytics.fetch_edges(db)
+
+    if not edges:
+        return {
+            "total_nodes": 0, "total_edges": 0,
+            "total_components": 0, "largest_component_size": 0,
+            "top_pagerank": [], "top_degree": [],
+        }
+
+    nodes: set[int] = set()
+    for src, dst, _, _ in edges:
+        nodes.add(src)
+        nodes.add(dst)
+
+    components = graph_analytics.connected_components(edges)
+    sizes = graph_analytics.component_sizes(components)
+
+    pr = graph_analytics.pagerank(edges)
+    top_pr = sorted(pr.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    # Top by total degree
+    degree_map: dict[int, int] = {}
+    for node in nodes:
+        d = graph_analytics.degree_centrality(node, edges)
+        degree_map[node] = d["total_degree"]
+    top_degree = sorted(degree_map.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    # Resolve labels for top nodes
+    top_ids = {nid for nid, _ in top_pr + top_degree}
+    label_map = {
+        e.id: e.primary_label
+        for e in db.query(models.RawEntity).filter(models.RawEntity.id.in_(top_ids)).all()
+    }
+
+    return {
+        "total_nodes":            len(nodes),
+        "total_edges":            len(edges),
+        "total_components":       len(sizes),
+        "largest_component_size": max(sizes.values()) if sizes else 0,
+        "top_pagerank": [
+            {"entity_id": nid, "primary_label": label_map.get(nid), "score": score}
+            for nid, score in top_pr
+        ],
+        "top_degree": [
+            {"entity_id": nid, "primary_label": label_map.get(nid), "total_degree": deg}
+            for nid, deg in top_degree
+        ],
+    }
+
+
+@router.get("/graph/path")
+def get_shortest_path(
+    from_id: int = Query(..., ge=1),
+    to_id:   int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """Sprint 73 — BFS shortest path between two entities (directed)."""
+    if from_id == to_id:
+        raise HTTPException(status_code=400, detail="from_id and to_id must be different")
+
+    # Verify both entities exist
+    for eid in (from_id, to_id):
+        if not db.query(models.RawEntity).filter(models.RawEntity.id == eid).first():
+            raise HTTPException(status_code=404, detail=f"Entity {eid} not found")
+
+    edges = graph_analytics.fetch_edges(db)
+    result = graph_analytics.shortest_path(from_id, to_id, edges)
+
+    if result is None:
+        return {"found": False, "from_id": from_id, "to_id": to_id, "path": None}
+
+    # Resolve labels
+    path_ids = result["path"]
+    label_map = {
+        e.id: e.primary_label
+        for e in db.query(models.RawEntity).filter(models.RawEntity.id.in_(path_ids)).all()
+    }
+    steps = [
+        {"entity_id": pid, "primary_label": label_map.get(pid)}
+        for pid in path_ids
+    ]
+
+    return {
+        "found":     True,
+        "from_id":   from_id,
+        "to_id":     to_id,
+        "length":    result["length"],
+        "relations": result["relations"],
+        "steps":     steps,
+    }
+
+
+@router.get("/graph/components")
+def get_graph_components(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """Sprint 73 — List all weakly connected components with sizes and member IDs."""
+    edges = graph_analytics.fetch_edges(db)
+
+    if not edges:
+        return {"total_components": 0, "components": []}
+
+    node_to_comp = graph_analytics.connected_components(edges)
+    sizes = graph_analytics.component_sizes(node_to_comp)
+
+    # Group nodes by component
+    comp_members: dict[int, list[int]] = defaultdict(list)
+    for node_id, comp_id in node_to_comp.items():
+        comp_members[comp_id].append(node_id)
+
+    # Sort by size descending
+    sorted_comps = sorted(sizes.items(), key=lambda x: x[1], reverse=True)
+
+    return {
+        "total_components": len(sizes),
+        "components": [
+            {
+                "component_id": comp_id,
+                "size": size,
+                "entity_ids": sorted(comp_members[comp_id]),
+            }
+            for comp_id, size in sorted_comps
+        ],
+    }
+
+
+@router.get("/entities/{entity_id}/graph/metrics")
+def get_entity_graph_metrics(
+    entity_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
+    """
+    Sprint 73 — Return graph analytics metrics for a single entity:
+    degree centrality, PageRank score, connected component info.
+    """
+    entity = db.query(models.RawEntity).filter(models.RawEntity.id == entity_id).first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    edges = graph_analytics.fetch_edges(db)
+
+    # Degree
+    degree = graph_analytics.degree_centrality(entity_id, edges)
+
+    # PageRank
+    pr = graph_analytics.pagerank(edges)
+    pr_score = pr.get(entity_id, 0.0)
+    # Rank position
+    sorted_pr = sorted(pr.items(), key=lambda x: x[1], reverse=True)
+    pr_rank = next((i + 1 for i, (nid, _) in enumerate(sorted_pr) if nid == entity_id), None)
+
+    # Components
+    components = graph_analytics.connected_components(edges)
+    sizes = graph_analytics.component_sizes(components)
+    comp_id = components.get(entity_id)
+    comp_size = sizes.get(comp_id, 0) if comp_id is not None else 0
+
+    return {
+        "entity_id":       entity_id,
+        "primary_label":   entity.primary_label,
+        "degree":          degree,
+        "pagerank": {
+            "score":        round(pr_score, 6),
+            "rank":         pr_rank,
+            "total_nodes":  len(pr),
+        },
+        "component": {
+            "component_id": comp_id,
+            "size":         comp_size,
+        },
+    }
 
 
 @router.get("/entities/{entity_id}/graph", response_model=schemas.EntityGraphResponse)
