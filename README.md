@@ -11,10 +11,10 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-OLAP-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)](https://duckdb.org/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20DB-ff6b35?style=for-the-badge)](https://www.trychroma.com/)
-[![Tests](https://img.shields.io/badge/Tests-629%20passing-brightgreen?style=for-the-badge)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-881%20passing-brightgreen?style=for-the-badge)](backend/tests/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
-A domain-agnostic intelligence platform that ingests raw data, harmonizes it, enriches it against global knowledge bases, runs OLAP analytics and stochastic simulations, and lets you query everything through a RAG-powered AI assistant.
+A domain-agnostic intelligence platform that ingests raw data, harmonizes it, enriches it against global knowledge bases, runs OLAP analytics and stochastic simulations, builds entity relationship graphs, and lets you query everything through an agentic RAG-powered AI assistant.
 
 [Features](#features) · [Quick Start](#quick-start) · [Architecture](#architecture) · [API](#api-overview) · [Roadmap](#roadmap) · [Strategic Vision](docs/EVOLUTION_STRATEGY.md)
 
@@ -24,18 +24,19 @@ A domain-agnostic intelligence platform that ingests raw data, harmonizes it, en
 
 ## Why UKIP?
 
-Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 65 development sprints.
+Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 71 development sprints.
 
 **What it does:**
 
-1. **Ingest** any structured data (Excel, CSV, JSON-LD, XML, BibTeX, RIS, Parquet).
+1. **Ingest** any structured data (Excel, CSV, JSON-LD, XML, BibTeX, RIS, Parquet) through a 5-step wizard or direct API.
 2. **Harmonize** messy records with fuzzy matching, authority resolution against 5 global knowledge bases (Wikidata, VIAF, ORCID, DBpedia, OpenAlex), and bulk normalization rules.
-3. **Enrich** every record against academic APIs (OpenAlex, Google Scholar, Web of Science).
-4. **Analyze** with OLAP cubes (DuckDB), Monte Carlo simulations, topic modeling, correlation analysis, and I+D ROI projections.
-5. **Query** your entire dataset in natural language through a RAG assistant powered by any LLM provider.
-6. **Collaborate** through threaded comments on any entity or authority record, with full RBAC and edit/delete controls.
-7. **Observe** every action through a real-time activity feed, persistent audit log with HTTP-level tracking, and outbound webhooks.
-8. **Manage users and profiles** — role-based user management, per-user avatar, display name, bio, and a dedicated self-service profile page accessible to all roles.
+3. **Enrich** every record against academic APIs (OpenAlex, Google Scholar, Web of Science, Scopus).
+4. **Graph** relationships between entities — citations, authorship, membership, and semantic links — with BFS subgraph traversal and SVG visualization.
+5. **Analyze** with OLAP cubes (DuckDB), Monte Carlo simulations, topic modeling, correlation analysis, and I+D ROI projections.
+6. **Query** your entire dataset in natural language through an agentic RAG assistant powered by any LLM provider, with autonomous function calling across the tool registry.
+7. **Collaborate** through threaded comments on any entity or authority record, with full RBAC and edit/delete controls.
+8. **Observe** every action through a real-time activity feed, persistent audit log with HTTP-level tracking, and outbound webhooks.
+9. **Manage users and profiles** — role-based user management, per-user avatar, display name, bio, and a dedicated self-service profile page accessible to all roles.
 
 ### Design Philosophy
 
@@ -50,36 +51,39 @@ One rule: **Justified Complexity** ([details](docs/ARCHITECTURE.md)).
 ## Features
 
 ### Data Operations
-- **Entity Catalog** — Browse, search, inline-edit, and delete records across any domain. Dynamic pagination, structured identifier fields, FTS5 full-text search.
-- **Entity Detail Page** — Dedicated route (`/entities/:id`) with four tabs: Overview (inline editing), Enrichment (Monte Carlo chart + concepts), Authority (candidate review with confirm/reject), and **Comments** (threaded team annotations).
-- **Entity Linker** — Fuzzy pairwise duplicate detection across the catalog. Brand-blocked O(n²) scan with configurable similarity threshold. Side-by-side field comparison, merge (winner absorbs loser's null fields) and dismiss (persisted in `link_dismissals`). Undo dismissals at any time.
-- **Multi-format Import/Export** — Excel, CSV, JSON, XML. Drag-and-drop pre-analyzer for JSON-LD, RDF, Parquet, BibTeX, RIS.
+- **Entity Catalog** — Browse, search, inline-edit, and delete records across any domain. Universal schema (`primary_label`, `secondary_label`, `canonical_id`, `entity_type`, `domain`). Dynamic pagination, FTS5 full-text search.
+- **Entity Detail Page** — Dedicated route (`/entities/:id`) with five tabs: Overview (inline editing), Enrichment (Monte Carlo chart + concepts), Authority (candidate review), Comments (threaded annotations), and **Graph** (relationship network).
+- **Entity Relationship Graph** — Typed, weighted directed edges between entities (`cites`, `authored-by`, `belongs-to`, `related-to`). BFS subgraph traversal up to depth 2. SVG radial visualization with color-coded edge types, directional arrows, and hover tooltips. Manage relationships inline from the Graph tab.
+- **Entity Linker** — Fuzzy pairwise duplicate detection across the catalog. Configurable similarity threshold, side-by-side field comparison, merge (winner absorbs loser's non-empty fields), and dismiss (persisted with undo).
+- **Bulk Import Wizard** — 5-step guided import: Upload → Map Fields → Domain → Validate → Import. Drag-and-drop file zone, auto-preview (`POST /upload/preview`) with format detection, column auto-mapping, and sample rows. Science formats (BibTeX/RIS) show fixed read-only mapping. Custom column→field routing with skip support.
+- **Multi-format Import/Export** — Excel, CSV, JSON, XML, BibTeX, RIS, Parquet, RDF/TTL. Drag-and-drop pre-analyzer. Export to Excel with clean universal headers.
 - **Domain Registry** — Define custom schemas (Science, Healthcare, Business, or your own) with YAML-based configurations.
 - **Demo Mode** — One-click seed of 1,000 demo entities; one-click wipe.
 
 ### Data Quality
 - **Fuzzy Disambiguation** — `token_sort_ratio` + Levenshtein grouping of typos, casings, and synonyms.
 - **Authority Resolution Layer** — Resolve entities against Wikidata, VIAF, ORCID, DBpedia, and OpenAlex. Weighted scoring engine ranks candidates by confidence. Batch resolution with review queue for bulk confirm/reject workflows.
-- **Harmonization Pipeline** — Multi-step normalization with undo/redo history and change tracking.
+- **Harmonization Pipeline** — Universal normalization steps (`normalize_labels`, `normalize_canonical_ids`, `normalize_entity_types`, `set_default_validation`) with undo/redo history and full change tracking.
 
 ### Analytics & Intelligence
 - **OLAP Cube Explorer** — DuckDB-powered multi-dimensional queries with drill-down navigation and Excel pivot export.
 - **Monte Carlo Citation Projections** — Geometric Brownian Motion model simulates 5,000 citation trajectories per record. Interactive area charts.
 - **ROI Calculator** — Monte Carlo I+D projection engine. Models adoption uncertainty (Normal distribution, configurable σ) across 3–20 year horizons. Returns P5–P95 percentiles, break-even probability, year-by-year ROI trajectory, and final distribution histogram.
 - **Topic Modeling** — Concept frequency, co-occurrence (PMI), topic clusters, and Cramér's V field correlations.
-- **Executive Dashboard** — KPI summary cards, 7-day activity area chart, brand × year heatmap, top concepts cloud, and top entities table.
+- **Executive Dashboard** — KPI summary cards, 7-day activity area chart, secondary label × domain heatmap, top concepts cloud, and top entities table.
 - **Knowledge Gap Detector** — Automated scan of the active domain for enrichment holes, authority backlog, concept density shortfalls, and dimension completeness. Each gap is severity-rated (critical/warning/ok) with affected entity count and a recommended action.
 
 ### Artifact Studio
-- **Report Builder** — Self-contained HTML/PDF/Excel/PowerPoint reports generated server-side. Select any combination of sections: entity stats, enrichment coverage, top brands, topic clusters, harmonization log.
+- **Report Builder** — Self-contained HTML/PDF/Excel/PowerPoint reports generated server-side. Select any combination of sections: entity stats, enrichment coverage, top labels, topic clusters, harmonization log.
 - **Report Templates** — DB-backed template library with 4 built-in presets (Executive Summary, Research Analysis, Data Quality Audit, Full Report). Editors can save custom templates and apply them one-click.
 - **PowerPoint Export** — Branded 16:9 PPTX via `python-pptx`. Slides generated per selected section with platform accent color theming.
 - **Artifact Studio Hub** (`/artifacts`) — Unified gateway showing live gap counts, template library count, and ROI projector CTA.
 
-### Context Engineering
+### Context Engineering & Agentic AI
 - **Analysis Contexts** — Snapshot and restore domain state for LLM sessions. Tag context with domain, user, and metadata.
-- **Tool Registry** — Register, version, and invoke tool schemas from the UI. Audit every tool invocation.
-- **Context-Aware RAG** — RAG queries enriched with active domain context and tool results.
+- **Tool Registry** — Register, version, and invoke tool schemas from the UI. Every invocation is audited.
+- **Context-Aware RAG** — RAG queries enriched with active domain context and tool invocation history.
+- **Agentic Tool Loop** — RAG assistant can autonomously call tools mid-reasoning using LLM function calling (OpenAI tool-use, Anthropic tool_use, local model fallback). Returns `tools_used`, `iterations`, and an `agentic` flag. Togglable per-query from the chat UI with tool-call accordion display.
 
 ### Collaborative Features
 - **Threaded Annotations** — Comment on any entity or authority record. One-level reply threading. Edit/delete your own comments (admins can delete any). Full RBAC: editor+ to write, viewer to read.
@@ -99,13 +103,14 @@ One rule: **Justified Complexity** ([details](docs/ARCHITECTURE.md)).
 - **Branding** — Configurable platform name, accent color, and footer text, applied throughout the UI and report/PPTX exports.
 
 ### Scientometric Enrichment
-Three-phase cascading enrichment worker:
+Four-phase cascading enrichment worker:
 
 | Phase | Source | Access |
 |-------|--------|--------|
 | 1 | [OpenAlex](https://openalex.org/) | Free (polite `mailto:` mode) |
 | 2 | Google Scholar | Scraping via rotating proxies |
 | 3 | [Web of Science](https://clarivate.com/) | BYOK (institutional API key) |
+| 4 | [Scopus](https://www.elsevier.com/products/scopus) | BYOK (Elsevier institutional key) |
 
 ### Semantic RAG Assistant
 - **6 LLM providers** with BYOK support:
@@ -121,13 +126,13 @@ Three-phase cascading enrichment worker:
 
 - **ChromaDB** vector store with OpenAI or local `all-MiniLM-L6-v2` embeddings.
 - Natural language queries return grounded, source-attributed answers with similarity scores.
-- **Context-aware mode** enriches queries with active domain context and tool invocation history.
+- **Agentic mode** — toggle function calling per query; the model autonomously invokes catalog tools and returns full reasoning traces.
 
 ### User & Profile Management
 - **User Management UI** — `/settings/users` page (super_admin only): stats cards (total/active/inactive/by role), search + role/status filters, inline role assignment, activate/deactivate toggle, and create/edit slide-over form.
 - **Personal Profile Page** — `/profile` page accessible to all roles. Hero card with avatar, display name, role badge, bio, and member-since date. Sections: Profile Picture upload, Personal Information form (display name, email, bio), and Security (change password).
 - **User Avatar** — Drag & drop avatar upload with canvas center-crop to 200×200 JPEG. Stored as base64 data URL. Shown in header trigger, user menu dropdown, user management table, and entity views.
-- **Password Strength Indicator** — Real-time 4-segment bar (Weak → Fair → Good → Strong) with criteria checklist (length, uppercase, lowercase, number, special chars). Present on all password input fields: profile page, settings account tab, and user creation/edit form.
+- **Password Strength Indicator** — Real-time 4-segment bar (Weak → Fair → Good → Strong) with criteria checklist (length, uppercase, lowercase, number, special chars). Present on all password input fields.
 
 ### Security
 - **JWT authentication** with bcrypt password hashing.
@@ -151,10 +156,10 @@ Three-phase cascading enrichment worker:
 | **API** | Python 3.10+, FastAPI, SQLAlchemy ORM |
 | **Database** | SQLite + FTS5 (OLTP), DuckDB (OLAP cubes), ChromaDB (vectors) |
 | **Matching** | thefuzz + python-Levenshtein |
-| **Enrichment** | openalex-py, scholarly, httpx |
+| **Enrichment** | openalex-py, scholarly, httpx, Scopus API |
 | **Analytics** | numpy, scipy, DuckDB SQL (CUBE/ROLLUP/GROUPING SETS) |
 | **NLP** | LDA topic modeling, sentence-transformers |
-| **AI/RAG** | openai, anthropic, ChromaDB, sentence-transformers |
+| **AI/RAG** | openai, anthropic, ChromaDB, sentence-transformers, function calling |
 | **Export** | openpyxl (Excel), WeasyPrint (PDF), python-pptx (PowerPoint) |
 | **Frontend** | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4, Recharts |
 
@@ -202,14 +207,14 @@ Open `http://localhost:3004`
 ### 4. (Optional) Configure providers
 
 - **AI Assistant**: Go to **Integrations > AI Language Models** and add your API key. For zero-cost: install [Ollama](https://ollama.ai) and point to `http://localhost:11434/v1`.
-- **Web of Science**: Set `WOS_API_KEY` as an environment variable.
+- **Web of Science / Scopus**: Set `WOS_API_KEY` / `SCOPUS_API_KEY` as environment variables.
 - **Webhooks**: Go to **Settings > Webhooks** to register outbound endpoints and subscribe to events.
 
 ### 5. Run tests
 
 ```bash
 python -m pytest backend/tests/ -x -q
-# 578 tests, all passing
+# 881 tests, all passing
 ```
 
 ---
@@ -218,7 +223,7 @@ python -m pytest backend/tests/ -x -q
 
 ```mermaid
 graph TD
-    A[Excel / CSV / JSON-LD] -->|Import| B[(SQLite + FTS5)]
+    A[Excel / CSV / BibTeX / RIS / JSON-LD] -->|Import Wizard| B[(SQLite + FTS5)]
     B --> C{Disambiguation}
     C -->|Fuzzy Match| D[Authority Resolution]
     D -->|Wikidata, VIAF, ORCID, DBpedia, OpenAlex| E[Review Queue]
@@ -228,11 +233,15 @@ graph TD
     B -->|Duplicate Pairs| LNK[Entity Linker]
     LNK -->|Merge / Dismiss| B
 
+    B -->|Relationships| GRP[Relationship Graph]
+    GRP -->|BFS Subgraph| GVIS[SVG Visualization]
+
     B -->|Queued Records| H[Enrichment Worker]
     H -->|Phase 1| I[OpenAlex]
     H -->|Phase 2| J[Google Scholar]
     H -->|Phase 3| K[Web of Science]
-    I & J & K --> B
+    H -->|Phase 4| SC[Scopus]
+    I & J & K & SC --> B
 
     B -->|Star Schema| OLAP[(DuckDB Cubes)]
     OLAP --> AN[OLAP Explorer]
@@ -248,8 +257,9 @@ graph TD
     B -->|Enriched Text| VDB[(ChromaDB)]
     VDB -->|Retrieval| RAG[RAG Engine]
     CTX[Context Registry] --> RAG
+    TR[Tool Registry] -->|Function Calling| RAG
     LLM[LLM Provider] --> RAG
-    RAG --> CHAT[AI Chat]
+    RAG --> CHAT[Agentic AI Chat]
 
     B -->|Mutations| MW[Audit Middleware]
     MW --> AUD[(audit_logs)]
@@ -267,9 +277,9 @@ graph TD
     classDef db fill:#f9f,color:#000,stroke:#333,stroke-width:2px;
     class B,VDB,OLAP,AUD db;
     classDef api fill:#ffd700,color:#000,stroke:#333,stroke-width:2px;
-    class I,J,K api;
+    class I,J,K,SC api;
     classDef ai fill:#c7d2fe,color:#1e1b4b,stroke:#818cf8,stroke-width:2px;
-    class RAG,LLM,CHAT,CTX ai;
+    class RAG,LLM,CHAT,CTX,TR ai;
     classDef analytics fill:#bbf7d0,color:#14532d,stroke:#4ade80,stroke-width:2px;
     class MC,AN,TM,ROI,GAP analytics;
     classDef obs fill:#fed7aa,color:#7c2d12,stroke:#f97316,stroke-width:2px;
@@ -280,7 +290,7 @@ graph TD
 
 ## API Overview
 
-143 endpoints across 25 functional routers. Full interactive docs at `/docs` (Swagger) or `/redoc`.
+150+ endpoints across 25 functional routers. Full interactive docs at `/docs` (Swagger) or `/redoc`.
 
 ### Authentication & Users
 | Method | Endpoint | Description |
@@ -300,20 +310,31 @@ graph TD
 ### Entity Catalog
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/entities` | List entities (search, pagination, filters) |
+| `GET` | `/entities` | List entities (search, pagination) |
 | `GET` | `/entities/{id}` | Single entity detail |
-| `POST` | `/upload` | Import file (Excel, CSV) |
+| `PUT` | `/entities/{id}` | Update entity fields (editor+) |
+| `DELETE` | `/entities/{id}` | Delete entity (editor+) |
+| `DELETE` | `/entities/bulk` | Bulk delete by ID list (editor+) |
+| `POST` | `/entities/bulk-update` | Batch field update (editor+) |
+| `POST` | `/upload/preview` | Parse file without importing — returns format, columns, auto-mapping, sample rows |
+| `POST` | `/upload` | Import file with domain + custom field mapping (editor+) |
+| `GET` | `/export` | Export catalog to Excel |
 | `GET` | `/stats` | Aggregated system statistics |
-| `GET` | `/export` | Export data (CSV, Excel, JSON, XML) |
+
+### Entity Relationships
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/entities/{id}/graph` | BFS subgraph (`?depth=1\|2`, max 50 nodes) |
+| `GET` | `/entities/{id}/relationships` | List all edges (in + out) for an entity |
+| `POST` | `/entities/{id}/relationships` | Create typed relationship (editor+) |
+| `DELETE` | `/relationships/{rel_id}` | Delete relationship (editor+) |
 
 ### Entity Linker
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/linker/candidates` | Fuzzy duplicate candidates (brand-blocked scan) |
-| `POST` | `/linker/merge` | Merge loser into winner entity |
-| `POST` | `/linker/dismiss` | Mark pair as not a duplicate (idempotent) |
-| `GET` | `/linker/dismissals` | List dismissed pairs |
-| `DELETE` | `/linker/dismissals/{id}` | Undo a dismissal |
+| `POST` | `/entities/link/find` | Fuzzy duplicate candidates (configurable threshold) |
+| `POST` | `/entities/link/merge` | Merge loser into winner entity |
+| `POST` | `/entities/link/dismiss` | Mark pair as not a duplicate (idempotent) |
 
 ### Full-Text Search
 | Method | Endpoint | Description |
@@ -332,8 +353,11 @@ graph TD
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/disambiguate/{field}` | Fuzzy-match groups for a field |
+| `GET` | `/harmonization/steps` | List pipeline steps |
 | `POST` | `/harmonization/apply` | Apply harmonization step |
+| `POST` | `/harmonization/apply-all` | Run full pipeline |
 | `POST` | `/harmonization/undo` | Undo last harmonization |
+| `POST` | `/harmonization/redo` | Redo previously undone step |
 | `POST` | `/rules/apply` | Apply normalization rules |
 
 ### Authority Resolution
@@ -385,7 +409,7 @@ graph TD
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/rag/index` | Vectorize catalog into ChromaDB |
-| `POST` | `/rag/query` | Natural language query |
+| `POST` | `/rag/query` | Natural language query (`use_tools: true` for agentic mode) |
 | `GET` | `/rag/stats` | Vector store statistics |
 
 ### Annotations (Collaborative Comments)
@@ -401,6 +425,7 @@ graph TD
 |--------|----------|-------------|
 | `GET` | `/context/sessions` | List analysis sessions |
 | `POST` | `/context/sessions` | Create context snapshot |
+| `POST` | `/context/sessions/diff/insights` | Compare two sessions and generate diff insights |
 | `GET` | `/context/tools` | List registered tools |
 | `POST` | `/context/tools` | Register tool schema |
 | `POST` | `/context/tools/{id}/invoke` | Invoke tool and log result |
@@ -452,9 +477,9 @@ graph TD
 ```
 ukip/
 ├── backend/
-│   ├── adapters/                  # Store + enrichment + LLM adapters
+│   ├── adapters/                  # Store + enrichment + LLM adapters (incl. Scopus)
 │   ├── analytics/
-│   │   ├── rag_engine.py          # RAG orchestration (index + query)
+│   │   ├── rag_engine.py          # RAG orchestration (standard + agentic tool loop)
 │   │   └── vector_store.py        # ChromaDB vector store
 │   ├── analyzers/
 │   │   ├── topic_modeling.py      # Concept frequency, co-occurrence, PMI
@@ -469,8 +494,12 @@ ukip/
 │   ├── exporters/
 │   │   ├── excel_exporter.py      # Branded 4-sheet Excel workbook
 │   │   └── pptx_exporter.py       # Branded 16:9 PowerPoint (python-pptx)
-│   ├── routers/                   # 25 domain routers (143 endpoints)
-│   │   ├── ai_rag.py              # RAG index/query/stats
+│   ├── parsers/
+│   │   ├── bibtex_parser.py       # BibTeX → universal records
+│   │   ├── ris_parser.py          # RIS → universal records
+│   │   └── science_mapper.py      # Science record → UniversalEntity fields
+│   ├── routers/                   # 25 domain routers (150+ endpoints)
+│   │   ├── ai_rag.py              # RAG index/query/stats + agentic mode
 │   │   ├── analytics.py           # Dashboard, OLAP, ROI, topic analyzers
 │   │   ├── annotations.py         # Collaborative threaded comments
 │   │   ├── artifacts.py           # Gap detector + report templates
@@ -478,29 +507,32 @@ ukip/
 │   │   ├── auth_users.py          # JWT auth + RBAC + avatar + profile endpoints
 │   │   ├── authority.py           # Authority resolution + review queue
 │   │   ├── branding.py            # Platform branding settings
-│   │   ├── context.py             # Context sessions + tool registry
+│   │   ├── column_maps.py         # Universal column header → model field mapping
+│   │   ├── context.py             # Context sessions + tool registry + diff/insights
 │   │   ├── demo.py                # Demo seed/reset
 │   │   ├── disambiguation.py      # Fuzzy field grouping + rules
 │   │   ├── domains.py             # Domain schema CRUD
-│   │   ├── entities.py            # Entity CRUD + pagination
+│   │   ├── entities.py            # Entity CRUD + pagination + bulk ops
 │   │   ├── entity_linker.py       # Duplicate detection + merge/dismiss
-│   │   ├── harmonization.py       # Normalization pipeline (undo/redo)
-│   │   ├── ingest.py              # File upload + export
+│   │   ├── harmonization.py       # Universal normalization pipeline (undo/redo)
+│   │   ├── ingest.py              # Import wizard (preview + upload) + export
 │   │   ├── notifications.py       # Notification center (read/unread state)
+│   │   ├── relationships.py       # Entity relationship graph (CRUD + BFS)
 │   │   ├── reports.py             # HTML/PDF/Excel/PPTX report generation
 │   │   ├── search.py              # FTS5 global search + index rebuild
-│   │   ├── stores.py              # E-commerce connector management
+│   │   ├── stores.py              # Store connector management
 │   │   └── webhooks.py            # Outbound webhook CRUD + delivery
-│   ├── tests/                     # 629 tests across 35 files
+│   ├── tests/                     # 881 tests across 36 files
 │   ├── audit.py                   # AuditMiddleware (HTTP-level interception)
 │   ├── auth.py                    # JWT + RBAC + account lockout
 │   ├── circuit_breaker.py         # External API resilience
 │   ├── encryption.py              # Fernet credential encryption
 │   ├── main.py                    # FastAPI app (slim orchestrator)
-│   ├── models.py                  # SQLAlchemy ORM (19 tables)
+│   ├── models.py                  # SQLAlchemy ORM (23 tables, universal schema)
 │   ├── olap.py                    # DuckDB OLAP engine
 │   ├── report_builder.py          # Section builders for reports
-│   └── schema_registry.py         # Dynamic domain schema loader
+│   ├── schema_registry.py         # Dynamic domain schema loader
+│   └── tool_registry.py           # Tool schema registry + invocation
 ├── frontend/
 │   ├── app/
 │   │   ├── analytics/
@@ -518,13 +550,15 @@ ukip/
 │   │   ├── disambiguation/        # Fuzzy disambiguation tool
 │   │   ├── domains/               # Domain schema designer
 │   │   ├── entities/
-│   │   │   ├── [id]/              # Entity Detail (Overview · Enrichment · Authority · Comments)
+│   │   │   ├── [id]/              # Entity Detail (Overview · Enrichment · Authority · Comments · Graph)
+│   │   │   ├── bulk-edit/         # Bulk field editor (multi-select + batch update)
 │   │   │   └── link/              # Entity Linker (duplicate detection + merge)
 │   │   ├── harmonization/         # Data cleaning workflows
+│   │   ├── import/                # Bulk Import Wizard (5-step guided upload)
 │   │   ├── integrations/          # Store + AI provider config
-│   │   ├── notifications/         # Notification Center (read/unread, action links, bulk read)
+│   │   ├── notifications/         # Notification Center (read/unread, action links)
 │   │   ├── profile/               # Personal Profile page (avatar, info, bio, password)
-│   │   ├── rag/                   # Semantic RAG chat
+│   │   ├── rag/                   # Semantic RAG chat (standard + agentic)
 │   │   ├── reports/               # Report Builder (HTML/PDF/Excel/PPTX)
 │   │   ├── search/                # Full-text search results page
 │   │   ├── settings/
@@ -536,12 +570,14 @@ ukip/
 │   │       ├── AvatarUpload.tsx       # Drag & drop avatar upload with canvas crop
 │   │       ├── ConceptCloud.tsx       # Shared concept visualization
 │   │       ├── DisambiguationTool.tsx # Fuzzy cluster resolver
-│   │       ├── EntityTable.tsx        # Entity list with detail links
+│   │       ├── EntityGraph.tsx        # SVG radial relationship graph with edge types
+│   │       ├── EntityTable.tsx        # Entity list with universal schema columns
 │   │       ├── MonteCarloChart.tsx    # Citation projection chart
 │   │       ├── NotificationBell.tsx   # Bell icon with live unread count badge
-│   │       ├── PasswordStrength.tsx   # Real-time password strength bar + criteria checklist
-│   │       ├── RAGChatInterface.tsx   # AI chat with source attribution
-│   │       ├── UserAvatar.tsx         # Shared avatar: image or role-colored initials fallback
+│   │       ├── PasswordStrength.tsx   # Real-time password strength bar + criteria
+│   │       ├── RAGChatInterface.tsx   # AI chat with agentic toggle + tool accordion
+│   │       ├── RelationshipManager.tsx # Add/delete entity relationships inline
+│   │       ├── UserAvatar.tsx         # Shared avatar: image or role-colored initials
 │   │       └── ui/                    # Shared design system (TabNav, Badge, PageHeader…)
 │   └── lib/                       # apiFetch API client
 ├── data/demo/
@@ -577,7 +613,7 @@ ukip/
 | 23 | Entity UX | Entity Detail Page `/entities/:id` — 3-tab view: Overview (inline edit), Enrichment (MC chart), Authority |
 | 36 | Architecture | API routers refactor — split 3,370-line `main.py` into 12 domain routers |
 | 37 | Analytics | ROI Calculator — Monte Carlo I+D with P5–P95, break-even probability, year-by-year charts |
-| 39 | Dashboard | Executive Dashboard — KPI cards, 7-day area chart, brand × year heatmap, concept cloud |
+| 39 | Dashboard | Executive Dashboard — KPI cards, 7-day area chart, heatmap, concept cloud |
 | 40 | Export | Enterprise export — branded Excel (4-sheet workbook), PDF via WeasyPrint |
 | 41 | Demo | Demo Mode — one-click seed of 1,000 entities, one-click wipe |
 | 42 | Collaboration | Collaborative Annotations — threaded comments on entities and authority records with RBAC |
@@ -589,23 +625,29 @@ ukip/
 | 48 | Context | Context Engineering — analysis context snapshots, sessions, domain metadata |
 | 49 | Context | Tool Registry — register, version, and invoke tool schemas; invocation audit log |
 | 50 | RAG | Context-Aware RAG — queries enriched with active domain context and tool history |
-| 51 | Observability | Audit Log Backend — `AuditMiddleware` captures HTTP-level mutations; new columns on `audit_logs` |
-| 52 | Observability | Audit Log Frontend — stats bar, 7-day sparkline, filter bar, timeline, CSV export at `/audit-log` |
-| 53 | Search | Full-Text Search — SQLite FTS5 index, global search bar in Header (live dropdown), `/search` page |
-| 54 | Entity UX | Comments Tab — 4th tab on Entity Detail page, live annotation count badge, `AnnotationThread` |
+| 51 | Observability | Audit Log Backend — `AuditMiddleware` captures HTTP-level mutations |
+| 52 | Observability | Audit Log Frontend — stats bar, 7-day sparkline, filter bar, timeline, CSV export |
+| 53 | Search | Full-Text Search — SQLite FTS5 index, global search bar in Header, `/search` page |
+| 54 | Entity UX | Comments Tab — 4th tab on Entity Detail page, live annotation count badge |
 | 55 | Data Quality | Entity Linker — fuzzy duplicate detection, side-by-side merge, dismiss with undo |
-| 56 | Notifications | Notification Center — `/notifications` page, per-user read/unread state (`UserNotificationState`), action links, bulk mark-all-read, filter by event type |
-| 57 | Users | User Management UI — `/settings/users` with stats cards, search + filters, inline role assignment, activate/deactivate, create/edit slide-over |
-| 58 | Users | User Avatar Upload — drag & drop, canvas center-crop to 200×200 JPEG, base64 storage, shown in header, menu, and user table |
-| 59 | Users | Personal Profile Management — `display_name` + `bio` fields, `PATCH /users/me/profile`, dedicated `/profile` page (all roles), password strength indicator on all password fields |
-| 60 | Webhooks | Webhooks UI Panel — Dedicated `/settings/webhooks` page: stats cards, expandable webhook cards, inline editing, synchronous test ping with live result, paginated delivery history timeline (`WebhookDelivery` model), `GET /webhooks/stats`, `GET /webhooks/{id}/deliveries` |
-| 61 | Data Sync | Scheduled Imports — `ScheduledImport` model, background scheduler thread (30s tick), CRUD endpoints, manual trigger with live results, interval presets (5min—7d), `/settings/scheduled-imports` management page with stat cards |
-| 62 | Entities | Bulk Entity Editor — `POST /entities/bulk-update` with field whitelist validation, `/entities/bulk-edit` page with multi-select table, batch field picker, bulk delete with confirmation, paginated search |
-| 63 | Enrichment | Scopus Adapter — Elsevier premium enrichment (BYOK institutional API key), cascade integration `enrichment_worker.py` |
-| 64 | Infrastructure| PostgreSQL/MySQL backends — Swapped SQLite for production-grade DBs via `DATABASE_URL` (psycopg2, pymysql, pooled connections), `docker-compose.yml` added for Postgres out-of-the-box |
-| 65 | Authentication | SSO Integration — OAuth2/OIDC integration via Authlib (`/sso/login` & `/sso/callback`), auto-provisioning of users, session middleware injection |
-| 66 | Core | Universal Entity Backend — Database migration to Phase 8a schema. RawProduct replaced by UniversalEntity seamlessly via SQLAlchemy `@hybrid_property` backward-compatibility mapping |
-| 67 | UI | Agnostic UI Refactor — `brand`, `model`, `ecommerce` literal references removed globally from UI dashboard, reports and pages. Rendered via YAML domain attributes natively |
+| 56 | Notifications | Notification Center — `/notifications` page, per-user read/unread state, action links, bulk mark-all-read |
+| 57 | Users | User Management UI — stats cards, search + filters, inline role assignment, activate/deactivate |
+| 58 | Users | User Avatar Upload — drag & drop, canvas center-crop to 200×200 JPEG, base64 storage |
+| 59 | Users | Personal Profile Management — `display_name` + `bio` fields, `/profile` page, password strength indicator |
+| 60 | Webhooks | Webhooks UI Panel — delivery history timeline (`WebhookDelivery`), stats, test ping |
+| 61 | Data Sync | Scheduled Imports — background scheduler, CRUD endpoints, interval presets, management page |
+| 62 | Entities | Bulk Entity Editor — `POST /entities/bulk-update`, multi-select table, batch field picker, bulk delete |
+| 63 | Enrichment | Scopus Adapter — Elsevier premium enrichment (BYOK), 4-phase cascade integration |
+| 64 | Infrastructure | PostgreSQL/MySQL backends — production-grade DBs via `DATABASE_URL`, `docker-compose.yml` |
+| 65 | Authentication | SSO Integration — OAuth2/OIDC via Authlib, auto-provisioning, session middleware |
+| 66–67 | Core | Universal Entity Schema — DB migration to `UniversalEntity` (primary_label, secondary_label, canonical_id, domain); UI agnostic refactor removing all e-commerce literals |
+| 68 | Science | BibTeX/RIS Import — science-format parsers, `science_record_to_entity` mapper, `/upload` science path |
+| 69a | Context | Memory Layer — persistent context sessions with snapshots, domain metadata indexing |
+| 69b | Context | Session Diff & Insights — compare two context snapshots, generate LLM diff insights |
+| 69c | AI | Agentic Tool Loop — LLM function calling (OpenAI + Anthropic + local), `chat_with_tools()` on all adapters, agentic toggle + tool-call accordion in RAG chat UI |
+| 70 | Graph | Entity Relationship Graph — typed directed edges (`cites`, `authored-by`, `belongs-to`, `related-to`), weighted, BFS subgraph endpoint, SVG radial visualization, `RelationshipManager` on entity detail |
+| 71 | Import | Bulk Import Wizard — 5-step frontend wizard (Upload → Map Fields → Domain → Validate → Import), `POST /upload/preview`, `domain` + `field_mapping` Form params on `/upload`, science formats auto-domain |
+| — | Cleanup | Universal Schema Cleanup — removed all 33 e-commerce hybrid properties from model; replaced `Entity` schema, `COLUMN_MAPPING`, harmonization steps, and analytics queries with domain-agnostic equivalents; 881 tests passing |
 
 ### Up Next 🔜
 
