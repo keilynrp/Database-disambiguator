@@ -117,7 +117,10 @@ One rule: **Justified Complexity** ([details](docs/ARCHITECTURE.md)).
 
 ### Collaborative Features
 - **Threaded Annotations** — Comment on any entity or authority record. One-level reply threading. Edit/delete your own comments (admins can delete any). Full RBAC.
+- **Emoji Reactions** — 7 reaction types (👍 ❤️ 🚀 👀 ✅ 😄 🎉) per annotation with per-user toggle. Reaction bar with live counts displayed inline.
+- **Resolve Workflow** — Mark annotation threads as resolved/unresolved (editor+). Resolved badge on thread header, stats endpoint with `total_threads`, `resolved`, `unresolved`, and `total_reactions`.
 - **Comments Tab** — Integrated into the entity detail page with live count badge.
+- **Multi-tenant Organizations** — Users belong to orgs with plan tiers (free/pro/enterprise), scoped membership roles (owner/admin/member), and organization switching.
 
 ### Full-Text Search
 - **SQLite FTS5 index** covering entities, authority records, and annotations.
@@ -248,7 +251,7 @@ Open `http://localhost:3004`
 
 ```bash
 python -m pytest backend/tests/ -x -q
-# 1091 tests, all passing
+# 1148 tests, all passing
 ```
 
 ---
@@ -314,9 +317,15 @@ graph TD
 
     USR[(Users + API Keys)] --> AUTH[Auth Layer]
     AUTH -->|JWT or ukip_ key| API[All Endpoints]
+    ORG[(Organizations)] -->|Membership| USR
 
     DASH[Custom Dashboards] -->|Widgets| B
     DASH -->|Widgets| OLAP
+
+    OLAP -->|TTL Cache 300s| CACHE[Analytics Cache]
+    B -->|TTL Cache 120s| CACHE
+
+    SDECK[Sales Deck] -->|Live KPIs| B
 
     classDef db fill:#f9f,color:#000,stroke:#333,stroke-width:2px;
     class B,VDB,OLAP,AUD,USR db;
@@ -329,14 +338,16 @@ graph TD
     classDef obs fill:#fed7aa,color:#7c2d12,stroke:#f97316,stroke-width:2px;
     class AUD,FEED,WH,RPT,AUDUI,SRCH,ALRT obs;
     classDef new fill:#ddd6fe,color:#4c1d95,stroke:#7c3aed,stroke-width:2px;
-    class DASH,SRPT,MAIL,AUTH,EXT new;
+    class DASH,SRPT,MAIL,AUTH,EXT,ORG,SDECK new;
+    classDef perf fill:#e0f2fe,color:#075985,stroke:#38bdf8,stroke-width:2px;
+    class CACHE perf;
 ```
 
 ---
 
 ## API Overview
 
-175+ endpoints across 29 functional routers. Full interactive docs at `/docs` (Swagger) or `/redoc`.
+190+ endpoints across 31 functional routers. Full interactive docs at `/docs` (Swagger) or `/redoc`.
 
 ### Authentication & Users
 | Method | Endpoint | Description |
@@ -443,7 +454,26 @@ graph TD
 | `GET` | `/notifications/center/unread-count` | Fast unread count for bell badge |
 | `POST` | `/notifications/center/read-all` | Mark all entries read |
 
-*(Full table of all 175+ endpoints available in `/docs`)*
+### Organizations
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/organizations` | Create organization (any authenticated user) |
+| `GET` | `/organizations` | List organizations you belong to |
+| `GET` | `/organizations/{id}` | Get org detail |
+| `PUT` | `/organizations/{id}` | Update name/description/plan (owner/admin) |
+| `DELETE` | `/organizations/{id}` | Soft-delete org (owner only) |
+| `GET` | `/organizations/{id}/members` | List org members |
+| `POST` | `/organizations/{id}/members` | Invite user by username |
+| `DELETE` | `/organizations/{id}/members/{user_id}` | Remove member |
+| `POST` | `/organizations/{id}/switch` | Switch active org context |
+
+### Sales Deck
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/exports/sales-deck` | Self-contained print-ready HTML sales deck (open → Print → PDF) |
+| `GET` | `/exports/sales-deck/data` | Live KPI payload used by the sales deck |
+
+*(Full table of all 190+ endpoints available in `/docs`)*
 
 ---
 
@@ -509,14 +539,16 @@ ukip/
 │   │   ├── scheduled_reports.py   # Recurring email report scheduler
 │   │   ├── search.py              # FTS5 global search + index rebuild
 │   │   ├── stores.py              # Store connector management
+│   │   ├── organizations.py       # Multi-tenant org CRUD + member management
+│   │   ├── sales_deck.py          # Sales deck HTML + data endpoints
 │   │   └── webhooks.py            # Outbound webhook CRUD + delivery
-│   ├── tests/                     # 1091 tests across 44 files
+│   ├── tests/                     # 1148 tests across 48 files
 │   ├── audit.py                   # AuditMiddleware (HTTP-level interception)
 │   ├── auth.py                    # JWT + API Key + RBAC + account lockout
 │   ├── circuit_breaker.py         # External API resilience
 │   ├── encryption.py              # Fernet credential encryption
 │   ├── main.py                    # FastAPI app (slim orchestrator)
-│   ├── models.py                  # SQLAlchemy ORM (27 tables)
+│   ├── models.py                  # SQLAlchemy ORM (29 tables)
 │   ├── olap.py                    # DuckDB OLAP engine
 │   ├── report_builder.py          # Section builders for reports
 │   ├── schema_registry.py         # Dynamic domain schema loader
@@ -556,9 +588,12 @@ ukip/
 │   │   │   ├── page.tsx           # Report Builder
 │   │   │   └── scheduled/         # Scheduled Reports management
 │   │   ├── search/                # Full-text search results
+│   │   ├── demo/
+│   │   │   └── sales/             # Interactive Sales Deck (animated KPIs, PDF export)
 │   │   ├── settings/
 │   │   │   ├── alerts/            # Alert Channels (Slack/Teams/Discord)
 │   │   │   ├── api-keys/          # API Key management
+│   │   │   ├── organizations/     # Multi-tenant org management + member invite
 │   │   │   ├── page.tsx           # App settings + branding + logo
 │   │   │   └── users/             # User Management
 │   │   └── components/
@@ -644,12 +679,16 @@ ukip/
 | **80** | **Retention** | **Custom Dashboard Builder — per-user named dashboards; 8 widget types; HTML5 drag-to-reorder; widget picker modal; user isolation** |
 | **81** | **Alerts** | **Slack/Teams/Discord/webhook alert channels — platform-native payloads (Block Kit, MessageCard, embeds); 8 subscribable events; Fernet-encrypted URLs; Test button** |
 | **82** | **Ecosystem** | **Public API Keys — `ukip_` format; SHA-256 hash storage; transparent JWT+key auth; `read`/`write`/`admin` scopes; per-user isolation; developer UX with curl example** |
+| **83** | **Performance** | **In-memory TTL analytics cache (`_SimpleCache`, 300s/120s); virtual scrolling for entity tables > 50 rows (ROW_HEIGHT=52px, editing-row pinning); admin cache-invalidation endpoint; 200-row page option** |
+| **84** | **Demo** | **Sales Deck generator — self-contained print-ready HTML (gradient hero, live KPIs, value props, capabilities checklist); `/demo/sales` interactive page with animated KPI counters** |
+| **85** | **Multi-tenancy** | **Organizations — `Organization` + `OrganizationMember` models; slug + plan (free/pro/enterprise); 9-endpoint router (CRUD + invite/remove + switch); `/settings/organizations` management UI** |
+| **86** | **Collaboration** | **Enhanced Annotations — emoji reactions (👍 ❤️ 🚀 👀 ✅ 😄 🎉) with per-user toggle; resolve/unresolve workflow (`is_resolved`, `resolved_at`); thread stats endpoint; reaction bar + resolve badge in UI** |
 
 ---
 
 ### Up Next 🔜
 
-The following sprints are proposed for the next development cycle. Each is designed to compound on the platform's strengths — retention, ecosystem, and intelligence.
+The following sprints are proposed for the next development cycle (Sprints 87–94). Each is designed to compound on the platform's strengths — real-time collaboration, ecosystem growth, and intelligence.
 
 #### ✅ Sprint 83 — Performance Optimization
 In-memory TTL analytics cache (`_SimpleCache`, 5 min / 2 min) for all expensive topic/correlation/dashboard computations. Virtual scrolling in the entities table for pages > 50 rows (ROW_HEIGHT=52px, 620px viewport, sticky thead, editing-row pinning). Admin cache-invalidation endpoint. 200-row page size option.
@@ -669,22 +708,22 @@ Add live presence indicators and real-time co-editing signals using WebSockets. 
 #### Sprint 88 — Workflow Automation Engine
 Visual no-code workflow builder: trigger → condition → action chains. Triggers: scheduled time, entity imported, quality score drops below threshold, alert fired. Actions: run harmonization, send report, call webhook, notify Slack, enrich domain. Replaces one-off scripts with reusable, audited automations.
 
-#### Sprint 87 — Embedding & Widget SDK
+#### Sprint 89 — Embedding & Widget SDK
 A JavaScript SDK (`ukip-embed.js`) that lets external apps embed UKIP widgets (entity search, quality badge, concept cloud, OLAP mini-chart) as iframes or web components. API Key authentication. Configurable theme. Powers partner integrations and drives viral distribution across the developer ecosystem.
 
-#### Sprint 88 — AI-Powered Entity Recommendations
+#### Sprint 90 — AI-Powered Entity Recommendations
 "You might also want to enrich…" suggestion engine. Uses semantic similarity (ChromaDB cosine distance) + gap scores to surface entities that are related to recently-enriched ones but still unenriched. Delivered as a daily digest notification and a persistent "Recommended" section in the entity catalog.
 
-#### Sprint 89 — Collaborative Review Queues
+#### Sprint 91 — Collaborative Review Queues
 Structured review workflows for data quality tasks: assign an entity set to a user, set a deadline, track completion. Reviewers get a focused inbox of items awaiting their judgment (disambiguation clusters, authority candidates, gap remediations). Managers see a kanban-style board. Drives daily active usage.
 
-#### Sprint 90 — Data Marketplace & Sharing Hub
+#### Sprint 92 — Data Marketplace & Sharing Hub
 Export curated entity sets as shareable, versioned datasets. Generate a public or password-protected permalink (`/share/<token>`) with read-only access. Recipients can import the dataset into their own UKIP instance with one click. Enables knowledge transfer between organizations and creates network effects.
 
-#### Sprint 91 — Compliance & Data Governance Module
+#### Sprint 93 — Compliance & Data Governance Module
 GDPR/CCPA compliance tools: data subject access request (DSAR) report generator, right-to-erasure workflow, retention policy engine (auto-delete entities older than N days from specified domains), and a compliance dashboard. Required for regulated industries (healthcare, finance, research institutions).
 
-#### Sprint 92 — Fine-Tuning & Domain-Specific LLMs
+#### Sprint 94 — Fine-Tuning & Domain-Specific LLMs
 Allow admins to export their enriched, harmonized entity dataset as a fine-tuning corpus (JSONL format compatible with OpenAI and Hugging Face). Track fine-tuning jobs. Swap the active RAG provider to a domain-tuned local model. Transforms UKIP from an AI consumer into an AI producer — the ultimate lock-in for domain experts.
 
 ---
@@ -693,9 +732,9 @@ Allow admins to export their enriched, harmonized entity dataset as a fine-tunin
 
 | Horizon | Theme | Description |
 |---------|-------|-------------|
-| **Now** (Sprints 83–86) | Performance & Scale | Analytics cache, virtual scroll, multi-tenancy, sales deck, annotation workflows |
-| **Near** (Sprints 87–91) | Ecosystem & Intelligence | Real-time collab, workflow automation, embedded widgets, data lineage, compliance |
-| **Far** (Sprints 92–96) | Intelligence Network | Recommendations, marketplaces, governance, fine-tuned domain models |
+| **Now** ✅ (Sprints 83–86) | Performance & Scale | Analytics cache, virtual scroll, multi-tenancy, sales deck, annotation workflows |
+| **Near** (Sprints 87–93) | Ecosystem & Intelligence | Real-time collab, workflow automation, embedded widgets, AI recommendations, data lineage, compliance |
+| **Far** (Sprints 94–98) | Intelligence Network | Fine-tuned domain models, marketplace, governance, network effects |
 
 *See [EVOLUTION_STRATEGY.md](docs/EVOLUTION_STRATEGY.md) for the full phase-by-phase platform vision.*
 
