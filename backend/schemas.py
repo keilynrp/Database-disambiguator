@@ -44,10 +44,10 @@ class EntityBase(BaseModel):
     
     # Enrichment fields
     enrichment_doi: Optional[str] = None
-    enrichment_citation_count: int = 0
+    enrichment_citation_count: Optional[int] = 0
     enrichment_concepts: Optional[str] = None
     enrichment_source: Optional[str] = None
-    enrichment_status: str = "none"
+    enrichment_status: Optional[str] = "none"
 
 class Entity(EntityBase):
     id: int
