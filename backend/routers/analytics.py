@@ -245,8 +245,7 @@ def dashboard_summary(
     top_entity_rows = (
         db.query(
             models.RawEntity.id,
-            models.RawEntity.entity_name,
-            models.RawEntity.brand_capitalized,
+            models.RawEntity.primary_label,
             models.RawEntity.enrichment_citation_count,
             models.RawEntity.enrichment_source,
         )
@@ -258,8 +257,8 @@ def dashboard_summary(
     top_entities = [
         {
             "id": r.id,
-            "entity_name": r.entity_name,
-            "brand": r.brand_capitalized,
+            "entity_name": r.primary_label,
+            "brand": None,
             "citation_count": r.enrichment_citation_count or 0,
             "source": r.enrichment_source,
         }
@@ -313,7 +312,7 @@ def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_curren
 
     with_sku = (
         db.query(func.count(models.RawEntity.id))
-        .filter(models.RawEntity.sku != None, models.RawEntity.sku != "")
+        .filter(models.RawEntity.canonical_id != None, models.RawEntity.canonical_id != "")
         .scalar() or 0
     )
     with_barcode = (
@@ -363,11 +362,11 @@ def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_curren
         .scalar() or 0
     )
     unique_products_with_variants = (
-        db.query(func.count(func.distinct(models.RawEntity.entity_name)))
+        db.query(func.count(func.distinct(models.RawEntity.primary_label)))
         .filter(
             models.RawEntity.variant != None,
             models.RawEntity.variant != "",
-            models.RawEntity.entity_name != None,
+            models.RawEntity.primary_label != None,
         )
         .scalar() or 0
     )

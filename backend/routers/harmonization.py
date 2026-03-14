@@ -117,13 +117,13 @@ def _step_consolidate_brands(db: Session, preview_only: bool):
 
 def _step_clean_entity_names(db: Session, preview_only: bool):
     changes = []
-    q = db.query(models.RawEntity).filter(models.RawEntity.entity_name != None)
+    q = db.query(models.RawEntity).filter(models.RawEntity.primary_label != None)
     if preview_only:
         q = q.limit(_PREVIEW_ROW_CAP)
     entities = q.all()
 
     for p in entities:
-        original = p.entity_name
+        original = p.primary_label
         if not original:
             continue
         cleaned = original
@@ -134,12 +134,12 @@ def _step_clean_entity_names(db: Session, preview_only: bool):
         if cleaned != original:
             changes.append({
                 "record_id": p.id,
-                "field":     "entity_name",
+                "field":     "primary_label",
                 "old_value": original,
                 "new_value": cleaned,
             })
             if not preview_only:
-                p.entity_name = cleaned
+                p.primary_label = cleaned
 
     if not preview_only:
         db.commit()
@@ -148,7 +148,7 @@ def _step_clean_entity_names(db: Session, preview_only: bool):
 
 def _step_standardize_volumes(db: Session, preview_only: bool):
     changes = []
-    target_fields = ["entity_name", "measure"]
+    target_fields = ["primary_label", "measure"]
     regex_rules = db.query(models.NormalizationRule).filter(
         models.NormalizationRule.is_regex == True
     ).all()

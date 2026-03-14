@@ -253,10 +253,10 @@ def export_entities(
         search_filter = f"%{search}%"
         query = query.filter(
             or_(
-                models.RawEntity.entity_name.ilike(search_filter),
-                models.RawEntity.brand_capitalized.ilike(search_filter),
-                models.RawEntity.model.ilike(search_filter),
-                models.RawEntity.sku.ilike(search_filter),
+                models.RawEntity.primary_label.ilike(search_filter),
+                models.RawEntity.canonical_id.ilike(search_filter),
+                models.RawEntity.secondary_label.ilike(search_filter),
+                models.RawEntity.entity_type.ilike(search_filter),
             )
         )
 

@@ -128,7 +128,7 @@ def get_candidates(
     """Return entity pairs that are likely duplicates (score ≥ threshold)."""
     entities = (
         db.query(models.RawEntity)
-        .filter(models.RawEntity.entity_name != None)  # noqa: E711
+        .filter(models.RawEntity.primary_label != None)  # noqa: E711
         .limit(_SCAN_LIMIT)
         .all()
     )
@@ -191,7 +191,8 @@ def merge_entities(
         raise HTTPException(status_code=404, detail=f"Entity {payload.loser_id} not found")
 
     _FILL_FIELDS = [
-        "entity_name", "brand_capitalized", "brand_lower", "model", "sku", "variant",
+        "primary_label", "secondary_label", "canonical_id",
+        "brand_capitalized", "brand_lower", "model", "variant",
         "classification", "entity_type", "gtin", "barcode", "unit_of_measure", "measure",
         "enrichment_doi", "enrichment_concepts", "enrichment_source",
     ]
