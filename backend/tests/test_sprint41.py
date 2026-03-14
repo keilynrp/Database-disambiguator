@@ -16,15 +16,13 @@ def _demo_df(n: int = 5) -> pd.DataFrame:
     """Minimal demo DataFrame matching demo_entities.xlsx schema."""
     return pd.DataFrame([
         {
-            "entity_name":              f"Demo Entity {i}",
-            "brand_capitalized":        f"DemoBrand{i % 3}",
-            "classification":           "Software",
-            "creation_date":            "2023-06-01",
+            "primary_label":            f"Demo Entity {i}",
+            "secondary_label":          f"DemoBrand{i % 3}",
+            "entity_type":              "software",
             "enrichment_status":        "completed",
             "enrichment_citation_count": 10 * (i + 1),
             "enrichment_concepts":      "AI, machine learning",
             "enrichment_source":        "openalex",
-            "sku":                      f"DEMO-TST-{i:05d}",
         }
         for i in range(n)
     ])
@@ -82,7 +80,7 @@ def test_demo_seed_loads_entities(client, auth_headers, db_session):
 def test_demo_seed_conflict_if_already_seeded(client, auth_headers, db_session):
     """A second seed call while demo data exists must return 409."""
     # Insert a demo entity directly
-    db_session.add(models.RawEntity(entity_name="Existing Demo", source="demo"))
+    db_session.add(models.RawEntity(primary_label="Existing Demo", source="demo"))
     db_session.commit()
 
     df = _demo_df(3)
@@ -102,8 +100,8 @@ def test_demo_reset_requires_admin(client, viewer_headers):
 def test_demo_reset_clears_only_demo_entities(client, auth_headers, db_session):
     """User entities (source='user') must survive a reset."""
     # Seed one demo + one user entity
-    db_session.add(models.RawEntity(entity_name="Demo Entity", source="demo"))
-    db_session.add(models.RawEntity(entity_name="User Entity", source="user"))
+    db_session.add(models.RawEntity(primary_label="Demo Entity", source="demo"))
+    db_session.add(models.RawEntity(primary_label="User Entity", source="user"))
     db_session.commit()
 
     resp = client.delete("/demo/reset", headers=auth_headers)
@@ -124,8 +122,8 @@ def test_demo_reset_clears_only_demo_entities(client, auth_headers, db_session):
 
 
 def test_demo_reset_returns_deleted_count(client, auth_headers, db_session):
-    db_session.add(models.RawEntity(entity_name="Demo A", source="demo"))
-    db_session.add(models.RawEntity(entity_name="Demo B", source="demo"))
+    db_session.add(models.RawEntity(primary_label="Demo A", source="demo"))
+    db_session.add(models.RawEntity(primary_label="Demo B", source="demo"))
     db_session.commit()
 
     resp = client.delete("/demo/reset", headers=auth_headers)

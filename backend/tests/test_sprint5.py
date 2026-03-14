@@ -44,7 +44,7 @@ class TestEnrichEndpointsRequireAuth:
 
 class TestHarmonizationMutationsRequireAuth:
     def test_apply_step_without_token(self, client):
-        response = client.post("/harmonization/apply/clean_entity_names")
+        response = client.post("/harmonization/apply/normalize_labels")
         assert response.status_code == 401
 
     def test_apply_all_without_token(self, client):

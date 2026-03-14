@@ -115,7 +115,7 @@ def _section_enrichment_coverage(db: Session) -> str:
         .filter(models.RawEntity.enrichment_status == "completed").scalar() or 0
     avg_cit = db.query(func.avg(models.RawEntity.enrichment_citation_count))\
         .filter(models.RawEntity.enrichment_status == "completed").scalar() or 0
-    top = db.query(models.RawEntity.entity_name, models.RawEntity.enrichment_citation_count,
+    top = db.query(models.RawEntity.primary_label, models.RawEntity.enrichment_citation_count,
                    models.RawEntity.enrichment_source)\
         .filter(models.RawEntity.enrichment_status == "completed")\
         .order_by(models.RawEntity.enrichment_citation_count.desc()).limit(8).all()
@@ -140,9 +140,9 @@ def _section_enrichment_coverage(db: Session) -> str:
 
 
 def _section_top_brands(db: Session) -> str:
-    rows_q = db.query(models.RawEntity.brand_capitalized, func.count(models.RawEntity.id).label("n"))\
-        .filter(models.RawEntity.brand_capitalized.isnot(None))\
-        .group_by(models.RawEntity.brand_capitalized)\
+    rows_q = db.query(models.RawEntity.secondary_label, func.count(models.RawEntity.id).label("n"))\
+        .filter(models.RawEntity.secondary_label.isnot(None))\
+        .group_by(models.RawEntity.secondary_label)\
         .order_by(func.count(models.RawEntity.id).desc()).limit(15).all()
     max_n = rows_q[0][1] if rows_q else 1
     rows = "".join(f"""

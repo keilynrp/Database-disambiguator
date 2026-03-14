@@ -17,7 +17,7 @@ from backend.enrichment_worker import (
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def make_entity(db, name="Test Entity", status="pending"):
-    entity = models.RawEntity(entity_name=name, enrichment_status=status)
+    entity = models.RawEntity(primary_label=name, enrichment_status=status)
     db.add(entity)
     db.commit()
     db.refresh(entity)
@@ -84,8 +84,7 @@ def test_atomic_claim_does_not_double_claim(db_session):
 
 def test_enrich_marks_failed_on_empty_name(db_session):
     entity = make_entity(db_session, status="processing")
-    entity.entity_name = None
-    entity.model = None
+    entity.primary_label = None
     db_session.commit()
 
     result = enrich_single_record(db_session, entity)

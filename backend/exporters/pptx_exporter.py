@@ -161,7 +161,7 @@ def generate_pptx(
             .filter(models.RawEntity.enrichment_status.in_(["done", "completed"])).scalar() or 0
         avg_cit = db.query(func.avg(models.RawEntity.enrichment_citation_count))\
             .filter(models.RawEntity.enrichment_status.in_(["done", "completed"])).scalar() or 0
-        top_entities = db.query(models.RawEntity.entity_name, models.RawEntity.enrichment_citation_count)\
+        top_entities = db.query(models.RawEntity.primary_label, models.RawEntity.enrichment_citation_count)\
             .filter(models.RawEntity.enrichment_status.in_(["done", "completed"]))\
             .order_by(models.RawEntity.enrichment_citation_count.desc()).limit(8).all()
         pct = round(done / total * 100) if total else 0
@@ -182,9 +182,9 @@ def generate_pptx(
 
     # ── Slide 4: Top Brands ───────────────────────────────────────────────────
     if "top_brands" in sections:
-        rows_q = db.query(models.RawEntity.brand_capitalized, func.count(models.RawEntity.id).label("n"))\
-            .filter(models.RawEntity.brand_capitalized.isnot(None))\
-            .group_by(models.RawEntity.brand_capitalized)\
+        rows_q = db.query(models.RawEntity.secondary_label, func.count(models.RawEntity.id).label("n"))\
+            .filter(models.RawEntity.secondary_label.isnot(None))\
+            .group_by(models.RawEntity.secondary_label)\
             .order_by(func.count(models.RawEntity.id).desc()).limit(10).all()
 
         slide = _add_slide(prs)

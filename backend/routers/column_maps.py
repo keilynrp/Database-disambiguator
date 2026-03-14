@@ -1,59 +1,80 @@
 """
-Column mapping dictionaries for import/export operations.
-Extracted from main.py so that both ingest.py and harmonization.py
-share the same mutable dict object.
+Universal column mapping for import/export operations.
+Maps common column header variations → model field names.
 """
 
 COLUMN_MAPPING = {
-    "Nombre del Producto": "entity_name",
-    "Clasificación": "classification",
-    "Tipo de Producto": "entity_type",
-    "¿Posible vender en cantidad decimal?": "is_decimal_sellable",
-    "¿Controlarás el stock del producto?": "control_stock",
-    "Estado": "status",
-    "Impuestos": "taxes",
-    "Variante": "variant",
-    "Código universal de producto": "entity_code_universal_1",
-    "Codigo universal": "entity_code_universal_2",
-    "Codigo universal del producto": "entity_code_universal_3",
-    "CODIGO UNIVERSAL DEL PRODRUCTO ": "entity_code_universal_4",
-    "marca": "brand_lower",
-    "Marca": "brand_capitalized",
-    "modelo": "model",
-    "GTIN": "gtin",
-    "Motivo de GTIN": "gtin_reason",
-    "Motivo de GTIN vacío": "gtin_empty_reason_1",
-    "Motivo GTIN vacío ": "gtin_empty_reason_2",
-    "Motivo GTIN vacia": "gtin_empty_reason_3",
-    "Motivo GTIN de producto": "gtin_entity_reason",
-    "motivo GTIN": "gtin_reason_lower",
-    "Mtivo GTIN vacio": "gtin_empty_reason_typo",
-    "EQUIMAPIENTO": "equipment",
-    "MEDIDA": "measure",
-    "TIPO DE UNION": "union_type",
-    "¿permitirás ventas sin stock?": "allow_sales_without_stock",
-    "Código de Barras": "barcode",
-    "SKU": "sku",
-    "Sucursales": "branches",
-    "Fecha de creacion": "creation_date",
-    "Estado Variante": "variant_status",
-    "Clave de producto": "entity_key",
-    "Unidad de medida": "unit_of_measure",
+    # primary_label synonyms
+    "Name":              "primary_label",
+    "Title":             "primary_label",
+    "Label":             "primary_label",
+    "Product Name":      "primary_label",
+    "name":              "primary_label",
+    "title":             "primary_label",
+    "label":             "primary_label",
+    "primary_label":     "primary_label",
+
+    # secondary_label synonyms
+    "Author":            "secondary_label",
+    "Authors":           "secondary_label",
+    "Brand":             "secondary_label",
+    "Manufacturer":      "secondary_label",
+    "Organization":      "secondary_label",
+    "secondary_label":   "secondary_label",
+
+    # canonical_id synonyms
+    "ID":                "canonical_id",
+    "Id":                "canonical_id",
+    "SKU":               "canonical_id",
+    "DOI":               "canonical_id",
+    "doi":               "canonical_id",
+    "Code":              "canonical_id",
+    "Barcode":           "canonical_id",
+    "GTIN":              "canonical_id",
+    "Identifier":        "canonical_id",
+    "canonical_id":      "canonical_id",
+
+    # entity_type synonyms
+    "Type":              "entity_type",
+    "Category":          "entity_type",
+    "Kind":              "entity_type",
+    "entity_type":       "entity_type",
+
+    # domain
+    "Domain":            "domain",
+    "domain":            "domain",
+
+    # validation_status
+    "Status":            "validation_status",
+    "validation_status": "validation_status",
+
+    # enrichment fields
+    "enrichment_doi":              "enrichment_doi",
+    "Citations":                   "enrichment_citation_count",
+    "Citation Count":              "enrichment_citation_count",
+    "enrichment_citation_count":   "enrichment_citation_count",
+    "Concepts":                    "enrichment_concepts",
+    "Keywords":                    "enrichment_concepts",
+    "enrichment_concepts":         "enrichment_concepts",
+    "enrichment_source":           "enrichment_source",
+    "enrichment_status":           "enrichment_status",
 }
 
-# Reverse mapping: model_field -> original excel header
-EXPORT_COLUMN_MAPPING: dict[str, str] = {v: k.strip() for k, v in COLUMN_MAPPING.items()}
-
-# Fix typos in export column headers
-EXPORT_COLUMN_MAPPING.update({
-    "equipment": "EQUIPAMIENTO",
-    "gtin_empty_reason_typo": "Motivo GTIN vacio",
-    "entity_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
-})
-
-# Corrections applied by the fix_export_typos harmonization step
-EXPORT_COLUMN_CORRECTIONS = {
-    "equipment": "EQUIPAMIENTO",
-    "gtin_empty_reason_typo": "Motivo GTIN vacio",
-    "entity_code_universal_4": "CODIGO UNIVERSAL DEL PRODUCTO",
+# model_field → clean English export header
+EXPORT_COLUMN_MAPPING: dict[str, str] = {
+    "primary_label":             "Primary Label",
+    "secondary_label":           "Secondary Label",
+    "canonical_id":              "Canonical ID",
+    "entity_type":               "Entity Type",
+    "domain":                    "Domain",
+    "validation_status":         "Validation Status",
+    "enrichment_doi":            "DOI",
+    "enrichment_citation_count": "Citation Count",
+    "enrichment_concepts":       "Concepts",
+    "enrichment_source":         "Enrichment Source",
+    "enrichment_status":         "Enrichment Status",
+    "source":                    "Data Source",
 }
+
+# No typo corrections needed for universal headers
+EXPORT_COLUMN_CORRECTIONS: dict[str, str] = {}

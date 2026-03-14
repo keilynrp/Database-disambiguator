@@ -10,7 +10,7 @@ from backend import models
 
 def _add_entity(db, enrichment_status="none", concepts=None):
     e = models.RawEntity(
-        entity_name="Test Entity",
+        primary_label="Test Entity",
         enrichment_status=enrichment_status,
         enrichment_concepts=concepts,
     )

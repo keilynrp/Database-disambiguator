@@ -79,7 +79,7 @@ class DuckDBOLAPEngine:
 
         metrics["total_records"] = con.execute("SELECT COUNT(*) FROM df").fetchone()[0]
 
-        skip_fields = {"entity_name", "title", "sku", "gtin", "doi", "nct_id"}
+        skip_fields = {"primary_label", "title", "canonical_id", "doi", "nct_id"}
 
         for attr in domain.attributes:
             if attr.name in skip_fields:
@@ -124,7 +124,7 @@ class DuckDBOLAPEngine:
             raise ValueError(f"Domain '{domain_id}' not found")
 
         df = self._load_domain_df(domain)
-        skip_fields = {"entity_name", "title", "sku", "gtin", "doi", "nct_id"}
+        skip_fields = {"primary_label", "title", "canonical_id", "doi", "nct_id"}
 
         result = []
         for attr in domain.attributes:

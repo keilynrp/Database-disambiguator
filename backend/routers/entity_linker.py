@@ -31,11 +31,11 @@ _MAX_PAIRS  = 50      # hard cap on returned candidates
 # ── Local schemas ─────────────────────────────────────────────────────────────
 
 class EntitySnap(BaseModel):
-    id:                int
-    entity_name:       Optional[str] = None
-    brand_capitalized: Optional[str] = None
-    model:             Optional[str] = None
-    sku:               Optional[str] = None
+    id:               int
+    primary_label:    Optional[str] = None
+    secondary_label:  Optional[str] = None
+    canonical_id:     Optional[str] = None
+    entity_type:      Optional[str] = None
     enrichment_status: str
     validation_status: str
 
@@ -68,10 +68,10 @@ class DismissalResponse(BaseModel):
 def _snap(e: models.RawEntity) -> EntitySnap:
     return EntitySnap(
         id=e.id,
-        entity_name=e.entity_name,
-        brand_capitalized=e.brand_capitalized,
-        model=e.model,
-        sku=e.sku,
+        primary_label=e.primary_label,
+        secondary_label=e.secondary_label,
+        canonical_id=e.canonical_id,
+        entity_type=e.entity_type,
         enrichment_status=e.enrichment_status,
         validation_status=e.validation_status,
     )
@@ -82,23 +82,23 @@ def _pair_score(a: models.RawEntity, b: models.RawEntity):
     weights: list = []
     matched: list = []
 
-    if a.entity_name and b.entity_name:
-        s = fuzz.token_sort_ratio(a.entity_name, b.entity_name) / 100
+    if a.primary_label and b.primary_label:
+        s = fuzz.token_sort_ratio(a.primary_label, b.primary_label) / 100
         weights.append((s, 0.5))
         if s >= 0.75:
-            matched.append("entity_name")
+            matched.append("primary_label")
 
-    if a.model and b.model:
-        s = fuzz.token_sort_ratio(a.model, b.model) / 100
+    if a.secondary_label and b.secondary_label:
+        s = fuzz.token_sort_ratio(a.secondary_label, b.secondary_label) / 100
         weights.append((s, 0.3))
         if s >= 0.75:
-            matched.append("model")
+            matched.append("secondary_label")
 
-    if a.sku and b.sku:
-        s = fuzz.ratio(a.sku, b.sku) / 100
+    if a.canonical_id and b.canonical_id:
+        s = fuzz.ratio(a.canonical_id, b.canonical_id) / 100
         weights.append((s, 0.2))
         if s >= 0.9:
-            matched.append("sku")
+            matched.append("canonical_id")
 
     if not weights:
         return 0.0, []
@@ -134,10 +134,10 @@ def get_candidates(
     )
     dismissed = _dismissed_set(db)
 
-    # Brand-based blocking: only compare within same brand group
+    # Secondary-label-based blocking: only compare within same secondary_label group
     buckets: dict = defaultdict(list)
     for e in entities:
-        key = (e.brand_capitalized or "").lower().strip() or "_ungrouped"
+        key = (e.secondary_label or "").lower().strip() or "_ungrouped"
         buckets[key].append(e)
 
     candidates = []
@@ -192,8 +192,7 @@ def merge_entities(
 
     _FILL_FIELDS = [
         "primary_label", "secondary_label", "canonical_id",
-        "brand_capitalized", "brand_lower", "model", "variant",
-        "classification", "entity_type", "gtin", "barcode", "unit_of_measure", "measure",
+        "entity_type", "domain", "validation_status",
         "enrichment_doi", "enrichment_concepts", "enrichment_source",
     ]
     for field in _FILL_FIELDS:

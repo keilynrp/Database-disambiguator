@@ -71,15 +71,17 @@ def demo_seed(
 
     # Map DataFrame columns → RawEntity fields
     _FIELD_MAP = {
-        "entity_name":              "entity_name",
-        "brand_capitalized":        "brand_capitalized",
-        "classification":           "classification",
-        "creation_date":            "creation_date",
-        "enrichment_status":        "enrichment_status",
+        "primary_label":             "primary_label",
+        "secondary_label":           "secondary_label",
+        "canonical_id":              "canonical_id",
+        "entity_type":               "entity_type",
+        "domain":                    "domain",
+        "validation_status":         "validation_status",
+        "enrichment_status":         "enrichment_status",
         "enrichment_citation_count": "enrichment_citation_count",
-        "enrichment_concepts":      "enrichment_concepts",
-        "enrichment_source":        "enrichment_source",
-        "sku":                      "sku",
+        "enrichment_concepts":       "enrichment_concepts",
+        "enrichment_source":         "enrichment_source",
+        "enrichment_doi":            "enrichment_doi",
     }
 
     rows = df.to_dict(orient="records")

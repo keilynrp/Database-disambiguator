@@ -8,11 +8,11 @@ import { PageHeader, Badge } from "../../components/ui";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface EntitySnap {
-  id:                number;
-  entity_name:       string | null;
-  brand_capitalized: string | null;
-  model:             string | null;
-  sku:               string | null;
+  id:               number;
+  primary_label:    string | null;
+  secondary_label:  string | null;
+  canonical_id:     string | null;
+  entity_type:      string | null;
   enrichment_status: string;
   validation_status: string;
 }
@@ -40,10 +40,10 @@ function simLabel(s: number): { label: string; variant: "error" | "warning" | "i
 }
 
 const DISPLAY_FIELDS: Array<{ key: keyof EntitySnap; label: string }> = [
-  { key: "entity_name",       label: "Name"   },
-  { key: "brand_capitalized", label: "Primary Label"  },
-  { key: "model",             label: "Secondary Label"  },
-  { key: "sku",               label: "SKU"    },
+  { key: "primary_label",   label: "Primary Label"   },
+  { key: "secondary_label", label: "Secondary Label" },
+  { key: "canonical_id",    label: "Canonical ID"    },
+  { key: "entity_type",     label: "Entity Type"     },
 ];
 
 function FieldRow({ label, valA, valB }: { label: string; valA: string | null; valB: string | null }) {
@@ -191,7 +191,7 @@ function CandidateCard({
                 >
                   <span className="font-semibold">#{entity.id}</span>
                   <span className="ml-1 truncate opacity-80">
-                    {entity.entity_name?.slice(0, 22) ?? "—"}
+                    {entity.primary_label?.slice(0, 22) ?? "—"}
                   </span>
                 </button>
               );

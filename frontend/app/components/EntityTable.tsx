@@ -9,22 +9,20 @@ import { Badge, useToast } from "./ui";
 
 interface Entity {
     id: number;
-    entity_name: string;
-    brand_capitalized: string | null; // Changed to string | null
-    model: string | null; // Changed to string | null
-    sku: string | null; // Changed to string | null
-    classification: string | null; // Changed to string | null
-    entity_type: string | null; // Changed to string | null
-    variant: string | null; // Changed to string | null
-    gtin: string | null; // Changed to string | null
-    barcode: string;
-    status: string | null; // Changed to string | null
-    validation_status: string;
-    enrichment_status?: string;
-    normalized_json: string | null; // Added normalized_json
+    primary_label: string | null;
+    secondary_label: string | null;
+    canonical_id: string | null;
+    entity_type: string | null;
+    domain: string | null;
+    validation_status: string | null;
+    enrichment_status: string | null;
+    enrichment_citation_count: number | null;
+    source: string | null;
+    attributes_json: string | null;
+    normalized_json: string | null;
 }
 
-type EditableFields = Pick<Entity, "entity_name" | "brand_capitalized" | "model" | "sku" | "classification" | "entity_type" | "validation_status" | "gtin" | "variant" | "status">;
+type EditableFields = Pick<Entity, "primary_label" | "secondary_label" | "canonical_id" | "entity_type" | "domain" | "validation_status">;
 
 export default function EntityTable() {
     const { activeDomain, activeDomainId } = useDomain();
@@ -40,16 +38,12 @@ export default function EntityTable() {
     // Edit state
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editData, setEditData] = useState<EditableFields>({
-        entity_name: "",
-        brand_capitalized: "",
-        model: "",
-        sku: "",
-        classification: "",
+        primary_label: "",
+        secondary_label: "",
+        canonical_id: "",
         entity_type: "",
+        domain: "",
         validation_status: "",
-        gtin: "",
-        variant: "",
-        status: "",
     });
     const [saving, setSaving] = useState(false);
 
@@ -100,16 +94,12 @@ export default function EntityTable() {
     function startEdit(entity: Entity) {
         setEditingId(entity.id);
         setEditData({
-            entity_name: entity.entity_name || "",
-            brand_capitalized: entity.brand_capitalized || "",
-            model: entity.model || "",
-            sku: entity.sku || "",
-            classification: entity.classification || "",
+            primary_label: entity.primary_label || "",
+            secondary_label: entity.secondary_label || "",
+            canonical_id: entity.canonical_id || "",
             entity_type: entity.entity_type || "",
+            domain: entity.domain || "",
             validation_status: entity.validation_status || "pending",
-            gtin: entity.gtin || "",
-            variant: entity.variant || "",
-            status: entity.status || "",
         });
     }
 
@@ -229,7 +219,7 @@ export default function EntityTable() {
 
     function handleBulkExport() {
         const selected = entities.filter(e => selectedIds.has(e.id));
-        const headers = ["id", "entity_name", "brand_capitalized", "model", "sku", "classification", "entity_type", "variant", "gtin", "barcode", "status", "validation_status", "enrichment_status"];
+        const headers = ["id", "primary_label", "secondary_label", "canonical_id", "entity_type", "domain", "validation_status", "enrichment_status", "source"];
         const rows = selected.map(e => headers.map(h => {
             const v = (e as any)[h];
             return v == null ? "" : `"${String(v).replace(/"/g, '""')}"`;
@@ -293,7 +283,7 @@ export default function EntityTable() {
                                         <th key={attr.name} className={`${thClass} no-wrap`}>{attr.label}</th>
                                     ))
                                 ) : (
-                                    <th className={`${thClass} no-wrap`}>Entity Name</th>
+                                    <th className={`${thClass} no-wrap`}>Primary Label</th>
                                 )}
                                 <th className={`${thClass} no-wrap`}>System Status</th>
                                 <th className={`${thClass} no-wrap text-right`}>Actions</th>
@@ -375,7 +365,7 @@ export default function EntityTable() {
                                                     })
                                                 ) : (
                                                     <td className="px-5 py-2.5">
-                                                        <input className={inputClass} value={editData.entity_name} onChange={(e) => setEditData({ ...editData, entity_name: e.target.value })} />
+                                                        <input className={inputClass} value={editData.primary_label || ""} onChange={(e) => setEditData({ ...editData, primary_label: e.target.value })} />
                                                     </td>
                                                 )}
                                                 <td className="px-5 py-2.5">
@@ -441,7 +431,7 @@ export default function EntityTable() {
                                                     return (
                                                         <td key={attr.name} className="px-5 py-3.5 text-gray-600 dark:text-gray-300">
                                                             {val !== null && val !== "" ? (
-                                                                attr.name === "gtin" || attr.name === "sku" || attr.name === "doi" ? (
+                                                                attr.name === "canonical_id" || attr.name === "doi" ? (
                                                                     <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
                                                                         {val}
                                                                     </code>
@@ -454,7 +444,7 @@ export default function EntityTable() {
                                                 })
                                             ) : (
                                                 <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
-                                                    {entity.entity_name}
+                                                    {entity.primary_label}
                                                 </td>
                                             )}
                                             <td className="px-5 py-3.5">
@@ -496,7 +486,7 @@ export default function EntityTable() {
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm(`Delete entity #${entity.id} "${entity.entity_name}"?`)) {
+                                                            if (confirm(`Delete entity #${entity.id} "${entity.primary_label}"?`)) {
                                                                 deleteEntity(entity.id);
                                                             }
                                                         }}
@@ -548,7 +538,7 @@ export default function EntityTable() {
                         <div className="flex h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
                             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                                 <div>
-                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedEntity.entity_name}</h2>
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedEntity.primary_label}</h2>
                                     <p className="text-sm text-gray-500">Full details and attributes</p>
                                 </div>
                                 <button onClick={() => setSelectedEntity(null)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800">

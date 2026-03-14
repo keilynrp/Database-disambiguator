@@ -9,7 +9,7 @@ from backend import models
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _seed_entity(db_session) -> int:
-    e = models.RawEntity(entity_name="Test Entity", source="user")
+    e = models.RawEntity(primary_label="Test Entity", source="user")
     db_session.add(e)
     db_session.commit()
     return e.id

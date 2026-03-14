@@ -73,7 +73,7 @@ def get_entities_grouped(
     _: models.User = Depends(get_current_user),
 ):
     """
-    Group entities by entity_name and show all variants for each entity.
+    Group entities by primary_label and show all variants for each entity.
     Similar to OpenRefine's clustering/faceting feature.
     """
     variant_counts = (
@@ -115,11 +115,11 @@ def get_entities_grouped(
 
     variants_by_name: dict[str, list] = defaultdict(list)
     for v in all_variants:
-        variants_by_name[v.entity_name].append(v)
+        variants_by_name[v.primary_label].append(v)
 
     return [
         {
-            "entity_name": entity_name,
+            "primary_label": entity_name,
             "variant_count": variant_count,
             "variants": variants_by_name.get(entity_name, []),
         }
@@ -208,11 +208,11 @@ def link_merge(
     )
     return {
         "merged": {
-            "id":                merged.id,
-            "entity_name":       merged.entity_name,
-            "brand_capitalized": merged.brand_capitalized,
-            "model":             merged.model,
-            "sku":               merged.sku,
+            "id":              merged.id,
+            "primary_label":   merged.primary_label,
+            "secondary_label": merged.secondary_label,
+            "canonical_id":    merged.canonical_id,
+            "entity_type":     merged.entity_type,
         },
         "deleted_count": len(payload.secondary_ids),
         "strategy":      payload.strategy,
@@ -308,7 +308,7 @@ def delete_entities_bulk(
 
 class _BulkUpdatePayload(BaseModel):
     ids: List[int] = Field(..., min_length=1, max_length=500)
-    updates: dict = Field(..., description="Fields to update: e.g. {'status': 'active', 'brand_capitalized': 'ACME'}")
+    updates: dict = Field(..., description="Fields to update: e.g. {'validation_status': 'confirmed', 'entity_type': 'paper'}")
 
 
 @router.post("/entities/bulk-update", status_code=200)

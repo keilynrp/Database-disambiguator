@@ -122,8 +122,8 @@ class EnterpriseExcelExporter:
 
     def _write_entities(self, ws, db: Session) -> None:
         headers = [
-            "ID", "Entity Name", "Brand", "SKU", "Classification",
-            "Enrichment Status", "Citation Count", "Source", "Creation Date",
+            "ID", "Primary Label", "Secondary Label", "Canonical ID", "Entity Type",
+            "Enrichment Status", "Citation Count", "Source",
         ]
         _style_header_row(ws, headers)
         ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
@@ -136,14 +136,13 @@ class EnterpriseExcelExporter:
         )
         for row_idx, e in enumerate(rows, start=2):
             ws.cell(row=row_idx, column=1, value=e.id)
-            ws.cell(row=row_idx, column=2, value=e.entity_name)
-            ws.cell(row=row_idx, column=3, value=e.brand_capitalized)
-            ws.cell(row=row_idx, column=4, value=e.sku)
-            ws.cell(row=row_idx, column=5, value=e.classification)
+            ws.cell(row=row_idx, column=2, value=e.primary_label)
+            ws.cell(row=row_idx, column=3, value=e.secondary_label)
+            ws.cell(row=row_idx, column=4, value=e.canonical_id)
+            ws.cell(row=row_idx, column=5, value=e.entity_type)
             ws.cell(row=row_idx, column=6, value=e.enrichment_status)
             ws.cell(row=row_idx, column=7, value=e.enrichment_citation_count)
             ws.cell(row=row_idx, column=8, value=e.enrichment_source)
-            ws.cell(row=row_idx, column=9, value=e.creation_date)
 
         _autofit(ws)
 

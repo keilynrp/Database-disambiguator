@@ -3,286 +3,37 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float
 from .database import Base
 
-import json
-from sqlalchemy.ext.hybrid import hybrid_property
-import sqlalchemy as sa
 
 class UniversalEntity(Base):
     __tablename__ = "raw_entities"
 
     id = Column(Integer, primary_key=True, index=True)
-    
-    # --- Universal Paradigm (Phase 8) ---
-    domain = Column(String, default="ecommerce", index=True)  # science, healthcare, business, etc.
-    entity_type = Column(String, default="product", index=True) # Type classification
-    
-    primary_label = Column(String, index=True)      # e.g., product_name, paper title
-    secondary_label = Column(String)                # e.g., brand, author
-    canonical_id = Column(String, index=True)       # e.g., sku, doi, gtin
-    
-    attributes_json = Column(Text, default="{}")    # Flexible data schema
-    
+
+    # Universal fields
+    domain = Column(String, default="default", index=True)
+    entity_type = Column(String, nullable=True, index=True)
+
+    primary_label = Column(String, index=True)
+    secondary_label = Column(String, nullable=True)
+    canonical_id = Column(String, index=True, nullable=True)
+
+    attributes_json = Column(Text, default="{}")
+
     # Metadata
     validation_status = Column(String, default="pending", index=True)
-    normalized_json = Column(Text, nullable=True)   # Keep for harmonization backward compat
+    normalized_json = Column(Text, nullable=True)
 
-    # Scientometric Enrichment Fields
+    # Enrichment
     enrichment_doi = Column(String, nullable=True)
     enrichment_citation_count = Column(Integer, default=0)
-    enrichment_concepts = Column(Text, nullable=True) 
+    enrichment_concepts = Column(Text, nullable=True)
     enrichment_source = Column(String, nullable=True)
     enrichment_status = Column(String, default="none", index=True)
 
-    # Data provenance
+    # Provenance
     source = Column(String, default="user")
 
-    # =========================================================
-    # BACKWARD COMPATIBILITY LAYER (e-commerce legacy fields)
-    # =========================================================
-    
-    @hybrid_property
-    def entity_name(self): return self.primary_label
-    @entity_name.setter
-    def entity_name(self, val): self.primary_label = val
-    @entity_name.expression
-    def entity_name(cls): return cls.primary_label
-
-    @hybrid_property
-    def sku(self): return self.canonical_id
-    @sku.setter
-    def sku(self, val): self.canonical_id = val
-    @sku.expression
-    def sku(cls): return cls.canonical_id
-
-    # JSON mappings
-    def _get_attr(self, key):
-        if not self.attributes_json: return None
-        return json.loads(self.attributes_json).get(key)
-
-    def _set_attr(self, key, val):
-        d = json.loads(self.attributes_json) if self.attributes_json else {}
-        d[key] = val
-        self.attributes_json = json.dumps(d)
-
-
-    @hybrid_property
-    def classification(self): return self._get_attr("classification")
-    @classification.setter
-    def classification(self, val): self._set_attr("classification", val)
-    @classification.expression
-    def classification(cls): return sa.func.json_extract(cls.attributes_json, '$.classification')
-
-    @hybrid_property
-    def is_decimal_sellable(self): return self._get_attr("is_decimal_sellable")
-    @is_decimal_sellable.setter
-    def is_decimal_sellable(self, val): self._set_attr("is_decimal_sellable", val)
-    @is_decimal_sellable.expression
-    def is_decimal_sellable(cls): return sa.func.json_extract(cls.attributes_json, '$.is_decimal_sellable')
-
-    @hybrid_property
-    def control_stock(self): return self._get_attr("control_stock")
-    @control_stock.setter
-    def control_stock(self, val): self._set_attr("control_stock", val)
-    @control_stock.expression
-    def control_stock(cls): return sa.func.json_extract(cls.attributes_json, '$.control_stock')
-
-    @hybrid_property
-    def status(self): return self._get_attr("status")
-    @status.setter
-    def status(self, val): self._set_attr("status", val)
-    @status.expression
-    def status(cls): return sa.func.json_extract(cls.attributes_json, '$.status')
-
-    @hybrid_property
-    def taxes(self): return self._get_attr("taxes")
-    @taxes.setter
-    def taxes(self, val): self._set_attr("taxes", val)
-    @taxes.expression
-    def taxes(cls): return sa.func.json_extract(cls.attributes_json, '$.taxes')
-
-    @hybrid_property
-    def variant(self): return self._get_attr("variant")
-    @variant.setter
-    def variant(self, val): self._set_attr("variant", val)
-    @variant.expression
-    def variant(cls): return sa.func.json_extract(cls.attributes_json, '$.variant')
-
-    @hybrid_property
-    def entity_code_universal_1(self): return self._get_attr("entity_code_universal_1")
-    @entity_code_universal_1.setter
-    def entity_code_universal_1(self, val): self._set_attr("entity_code_universal_1", val)
-    @entity_code_universal_1.expression
-    def entity_code_universal_1(cls): return sa.func.json_extract(cls.attributes_json, '$.entity_code_universal_1')
-
-    @hybrid_property
-    def entity_code_universal_2(self): return self._get_attr("entity_code_universal_2")
-    @entity_code_universal_2.setter
-    def entity_code_universal_2(self, val): self._set_attr("entity_code_universal_2", val)
-    @entity_code_universal_2.expression
-    def entity_code_universal_2(cls): return sa.func.json_extract(cls.attributes_json, '$.entity_code_universal_2')
-
-    @hybrid_property
-    def entity_code_universal_3(self): return self._get_attr("entity_code_universal_3")
-    @entity_code_universal_3.setter
-    def entity_code_universal_3(self, val): self._set_attr("entity_code_universal_3", val)
-    @entity_code_universal_3.expression
-    def entity_code_universal_3(cls): return sa.func.json_extract(cls.attributes_json, '$.entity_code_universal_3')
-
-    @hybrid_property
-    def entity_code_universal_4(self): return self._get_attr("entity_code_universal_4")
-    @entity_code_universal_4.setter
-    def entity_code_universal_4(self, val): self._set_attr("entity_code_universal_4", val)
-    @entity_code_universal_4.expression
-    def entity_code_universal_4(cls): return sa.func.json_extract(cls.attributes_json, '$.entity_code_universal_4')
-
-    @hybrid_property
-    def brand_lower(self): return self._get_attr("brand_lower")
-    @brand_lower.setter
-    def brand_lower(self, val): self._set_attr("brand_lower", val)
-    @brand_lower.expression
-    def brand_lower(cls): return sa.func.json_extract(cls.attributes_json, '$.brand_lower')
-
-    @hybrid_property
-    def brand_capitalized(self): return self._get_attr("brand_capitalized")
-    @brand_capitalized.setter
-    def brand_capitalized(self, val): self._set_attr("brand_capitalized", val)
-    @brand_capitalized.expression
-    def brand_capitalized(cls): return sa.func.json_extract(cls.attributes_json, '$.brand_capitalized')
-
-    @hybrid_property
-    def model(self): return self._get_attr("model")
-    @model.setter
-    def model(self, val): self._set_attr("model", val)
-    @model.expression
-    def model(cls): return sa.func.json_extract(cls.attributes_json, '$.model')
-
-    @hybrid_property
-    def gtin(self): return self._get_attr("gtin")
-    @gtin.setter
-    def gtin(self, val): self._set_attr("gtin", val)
-    @gtin.expression
-    def gtin(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin')
-
-    @hybrid_property
-    def gtin_reason(self): return self._get_attr("gtin_reason")
-    @gtin_reason.setter
-    def gtin_reason(self, val): self._set_attr("gtin_reason", val)
-    @gtin_reason.expression
-    def gtin_reason(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_reason')
-
-    @hybrid_property
-    def gtin_empty_reason_1(self): return self._get_attr("gtin_empty_reason_1")
-    @gtin_empty_reason_1.setter
-    def gtin_empty_reason_1(self, val): self._set_attr("gtin_empty_reason_1", val)
-    @gtin_empty_reason_1.expression
-    def gtin_empty_reason_1(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_empty_reason_1')
-
-    @hybrid_property
-    def gtin_empty_reason_2(self): return self._get_attr("gtin_empty_reason_2")
-    @gtin_empty_reason_2.setter
-    def gtin_empty_reason_2(self, val): self._set_attr("gtin_empty_reason_2", val)
-    @gtin_empty_reason_2.expression
-    def gtin_empty_reason_2(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_empty_reason_2')
-
-    @hybrid_property
-    def gtin_empty_reason_3(self): return self._get_attr("gtin_empty_reason_3")
-    @gtin_empty_reason_3.setter
-    def gtin_empty_reason_3(self, val): self._set_attr("gtin_empty_reason_3", val)
-    @gtin_empty_reason_3.expression
-    def gtin_empty_reason_3(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_empty_reason_3')
-
-    @hybrid_property
-    def gtin_entity_reason(self): return self._get_attr("gtin_entity_reason")
-    @gtin_entity_reason.setter
-    def gtin_entity_reason(self, val): self._set_attr("gtin_entity_reason", val)
-    @gtin_entity_reason.expression
-    def gtin_entity_reason(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_entity_reason')
-
-    @hybrid_property
-    def gtin_reason_lower(self): return self._get_attr("gtin_reason_lower")
-    @gtin_reason_lower.setter
-    def gtin_reason_lower(self, val): self._set_attr("gtin_reason_lower", val)
-    @gtin_reason_lower.expression
-    def gtin_reason_lower(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_reason_lower')
-
-    @hybrid_property
-    def gtin_empty_reason_typo(self): return self._get_attr("gtin_empty_reason_typo")
-    @gtin_empty_reason_typo.setter
-    def gtin_empty_reason_typo(self, val): self._set_attr("gtin_empty_reason_typo", val)
-    @gtin_empty_reason_typo.expression
-    def gtin_empty_reason_typo(cls): return sa.func.json_extract(cls.attributes_json, '$.gtin_empty_reason_typo')
-
-    @hybrid_property
-    def equipment(self): return self._get_attr("equipment")
-    @equipment.setter
-    def equipment(self, val): self._set_attr("equipment", val)
-    @equipment.expression
-    def equipment(cls): return sa.func.json_extract(cls.attributes_json, '$.equipment')
-
-    @hybrid_property
-    def measure(self): return self._get_attr("measure")
-    @measure.setter
-    def measure(self, val): self._set_attr("measure", val)
-    @measure.expression
-    def measure(cls): return sa.func.json_extract(cls.attributes_json, '$.measure')
-
-    @hybrid_property
-    def union_type(self): return self._get_attr("union_type")
-    @union_type.setter
-    def union_type(self, val): self._set_attr("union_type", val)
-    @union_type.expression
-    def union_type(cls): return sa.func.json_extract(cls.attributes_json, '$.union_type')
-
-    @hybrid_property
-    def allow_sales_without_stock(self): return self._get_attr("allow_sales_without_stock")
-    @allow_sales_without_stock.setter
-    def allow_sales_without_stock(self, val): self._set_attr("allow_sales_without_stock", val)
-    @allow_sales_without_stock.expression
-    def allow_sales_without_stock(cls): return sa.func.json_extract(cls.attributes_json, '$.allow_sales_without_stock')
-
-    @hybrid_property
-    def barcode(self): return self._get_attr("barcode")
-    @barcode.setter
-    def barcode(self, val): self._set_attr("barcode", val)
-    @barcode.expression
-    def barcode(cls): return sa.func.json_extract(cls.attributes_json, '$.barcode')
-
-    @hybrid_property
-    def branches(self): return self._get_attr("branches")
-    @branches.setter
-    def branches(self, val): self._set_attr("branches", val)
-    @branches.expression
-    def branches(cls): return sa.func.json_extract(cls.attributes_json, '$.branches')
-
-    @hybrid_property
-    def creation_date(self): return self._get_attr("creation_date")
-    @creation_date.setter
-    def creation_date(self, val): self._set_attr("creation_date", val)
-    @creation_date.expression
-    def creation_date(cls): return sa.func.json_extract(cls.attributes_json, '$.creation_date')
-
-    @hybrid_property
-    def variant_status(self): return self._get_attr("variant_status")
-    @variant_status.setter
-    def variant_status(self, val): self._set_attr("variant_status", val)
-    @variant_status.expression
-    def variant_status(cls): return sa.func.json_extract(cls.attributes_json, '$.variant_status')
-
-    @hybrid_property
-    def entity_key(self): return self._get_attr("entity_key")
-    @entity_key.setter
-    def entity_key(self, val): self._set_attr("entity_key", val)
-    @entity_key.expression
-    def entity_key(cls): return sa.func.json_extract(cls.attributes_json, '$.entity_key')
-
-    @hybrid_property
-    def unit_of_measure(self): return self._get_attr("unit_of_measure")
-    @unit_of_measure.setter
-    def unit_of_measure(self, val): self._set_attr("unit_of_measure", val)
-    @unit_of_measure.expression
-    def unit_of_measure(cls): return sa.func.json_extract(cls.attributes_json, '$.unit_of_measure')
-
-# Alias for backward compatibility
+# Keep alias so existing imports of models.RawEntity still work
 RawEntity = UniversalEntity
 
 

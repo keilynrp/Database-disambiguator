@@ -24,8 +24,8 @@ def _seed_enriched(db_session, n: int = 5):
     ]
     for i in range(n):
         db_session.add(models.RawEntity(
-            entity_name=f"Entity {i}",
-            status="active",
+            primary_label=f"Entity {i}",
+            validation_status="active",
             enrichment_concepts=concept_sets[i % len(concept_sets)],
             enrichment_status="completed",
         ))
@@ -217,10 +217,9 @@ class TestAnalyzerCorrelation:
         # Seed entities with predictable correlated fields
         for _ in range(6):
             db_session.add(models.RawEntity(
-                entity_name="Corr Entity",
-                status="active",
+                primary_label="Corr Entity",
+                validation_status="active",
                 entity_type="typeA",
-                classification="classA",
             ))
         db_session.commit()
         resp = client.get("/analyzers/correlation/default", headers=auth_headers)

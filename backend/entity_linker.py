@@ -29,29 +29,23 @@ def _tokenize(text: str) -> list[str]:
 
 def _entity_text(e: models.RawEntity) -> str:
     parts = [
-        e.entity_name or "",
-        e.brand_capitalized or "",
-        e.model or "",
-        e.classification or "",
-        e.variant or "",
-        e.sku or "",
+        e.primary_label or "",
+        e.secondary_label or "",
+        e.canonical_id or "",
+        e.entity_type or "",
     ]
     return " ".join(p for p in parts if p)
 
 def _entity_dict(e: models.RawEntity) -> dict:
     return {
-        "id":                  e.id,
-        "entity_name":         e.entity_name,
-        "brand_capitalized":   e.brand_capitalized,
-        "model":               e.model,
-        "sku":                 e.sku,
-        "gtin":                e.gtin,
-        "barcode":             e.barcode,
-        "classification":      e.classification,
-        "variant":             e.variant,
-        "unit_of_measure":     e.unit_of_measure,
-        "enrichment_status":   e.enrichment_status,
-        "validation_status":   e.validation_status,
+        "id":                e.id,
+        "primary_label":     e.primary_label,
+        "secondary_label":   e.secondary_label,
+        "canonical_id":      e.canonical_id,
+        "entity_type":       e.entity_type,
+        "domain":            e.domain,
+        "enrichment_status": e.enrichment_status,
+        "validation_status": e.validation_status,
     }
 
 # ── TF-IDF engine ──────────────────────────────────────────────────────────────
@@ -151,10 +145,9 @@ def find_candidates(
 
 
 _MERGE_FIELDS = [
-    "entity_name", "brand_capitalized", "brand_lower", "model",
-    "sku", "gtin", "barcode", "classification", "variant",
-    "unit_of_measure", "entity_type", "creation_date",
-    "enrichment_doi", "enrichment_source", "enrichment_concepts",
+    "primary_label", "secondary_label", "canonical_id",
+    "entity_type", "domain", "validation_status",
+    "enrichment_doi", "enrichment_concepts", "enrichment_source",
 ]
 
 

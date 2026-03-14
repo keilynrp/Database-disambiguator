@@ -1,35 +1,31 @@
 id: default
 name: Universal Catalog
-description: "Generic domain for standardized commercial or arbitrary entities"
+description: "Generic domain for standardized universal entities"
 primary_entity: "Entity"
 icon: "Database"
 attributes:
-  - name: entity_name
+  - name: primary_label
     type: string
     required: true
-    label: "Entity Name"
+    label: "Primary Label"
+    is_core: true
+  - name: secondary_label
+    type: string
+    label: "Secondary Label"
+    is_core: true
+  - name: canonical_id
+    type: string
+    label: "Canonical ID"
     is_core: true
   - name: entity_type
     type: string
     label: "Entity Type"
     is_core: true
-  - name: brand_capitalized
+  - name: domain
     type: string
-    label: "Brand / Maker"
+    label: "Domain"
     is_core: true
-  - name: model
+  - name: validation_status
     type: string
-    label: "Model"
-    is_core: true
-  - name: sku
-    type: string
-    label: "SKU / Code"
-    is_core: true
-  - name: status
-    type: string
-    label: "Status"
-    is_core: true
-  - name: variant
-    type: string
-    label: "Variant"
+    label: "Validation Status"
     is_core: true

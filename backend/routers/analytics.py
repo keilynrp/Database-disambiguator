@@ -216,18 +216,9 @@ def _domain_snapshot(db: Session, domain_id: str, top_n_concepts: int = 10,
     )
     type_distribution = [{"type": r[0], "count": r[1]} for r in type_rows]
 
-    # ── Timeline: entities by year from attributes_json["year"] or creation_date
+    # ── Timeline: entities by domain (grouped)
     year_counts: dict[int, int] = defaultdict(int)
-    date_rows = (
-        _q().with_entities(models.RawEntity.creation_date)
-        .filter(models.RawEntity.creation_date != None, models.RawEntity.creation_date != "")
-        .all()
-    )
-    for (raw_date,) in date_rows:
-        m = _YEAR_RE.search(str(raw_date))
-        if m:
-            year_counts[int(m.group(1))] += 1
-    entities_by_year = [{"year": yr, "count": year_counts[yr]} for yr in sorted(year_counts)]
+    entities_by_year: list[dict] = []
 
     # ── Top concepts via TopicAnalyzer ────────────────────────────────────────
     top_concepts: list[dict] = []
@@ -251,30 +242,30 @@ def _domain_snapshot(db: Session, domain_id: str, top_n_concepts: int = 10,
         .all()
     )
     top_entities = [
-        {"id": r.id, "entity_name": r.primary_label,
+        {"id": r.id, "primary_label": r.primary_label,
          "citation_count": r.enrichment_citation_count or 0, "source": r.enrichment_source}
         for r in top_entity_rows
     ]
 
-    # ── Heatmap: brand/type × year ────────────────────────────────────────────
-    brand_date_rows = (
-        _q().with_entities(models.RawEntity.brand_capitalized, models.RawEntity.creation_date)
-        .filter(models.RawEntity.brand_capitalized != None, models.RawEntity.brand_capitalized != "")
+    # ── Heatmap: secondary_label × domain ─────────────────────────────────────
+    label_domain_rows = (
+        _q().with_entities(models.RawEntity.secondary_label, models.RawEntity.domain)
+        .filter(models.RawEntity.secondary_label != None, models.RawEntity.secondary_label != "")
         .all()
     )
-    brand_totals: dict[str, int] = defaultdict(int)
-    brand_year_raw: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for (brand, raw_date) in brand_date_rows:
-        brand_totals[brand] += 1
-        m = _YEAR_RE.search(str(raw_date or ""))
-        if m:
-            brand_year_raw[brand][int(m.group(1))] += 1
-    top_brands = sorted(brand_totals, key=lambda b: brand_totals[b], reverse=True)[:_TOP_BRANDS_N]
-    all_years = sorted(year_counts.keys())
-    heatmap_years = all_years[-_TOP_YEARS_N:] if all_years else []
+    label_totals: dict[str, int] = defaultdict(int)
+    label_domain_raw: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    all_domains_set: set[str] = set()
+    for (label, dom) in label_domain_rows:
+        label_totals[label] += 1
+        dom_key = dom or "default"
+        label_domain_raw[label][dom_key] += 1
+        all_domains_set.add(dom_key)
+    top_labels = sorted(label_totals, key=lambda b: label_totals[b], reverse=True)[:_TOP_BRANDS_N]
+    heatmap_domains = sorted(all_domains_set)[:_TOP_YEARS_N]
     brand_year_matrix = {
-        "brands": top_brands, "years": heatmap_years,
-        "matrix": [[brand_year_raw[b].get(yr, 0) for yr in heatmap_years] for b in top_brands],
+        "brands": top_labels, "years": heatmap_domains,
+        "matrix": [[label_domain_raw[b].get(d, 0) for d in heatmap_domains] for b in top_labels],
     }
 
     return {
@@ -328,14 +319,9 @@ def dashboard_compare(
 def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     total_entities = db.query(func.count(models.RawEntity.id)).scalar() or 0
 
-    unique_brands = (
-        db.query(func.count(func.distinct(models.RawEntity.brand_capitalized)))
-        .filter(models.RawEntity.brand_capitalized != None)
-        .scalar() or 0
-    )
-    unique_models = (
-        db.query(func.count(func.distinct(models.RawEntity.model)))
-        .filter(models.RawEntity.model != None)
+    unique_secondary_labels = (
+        db.query(func.count(func.distinct(models.RawEntity.secondary_label)))
+        .filter(models.RawEntity.secondary_label != None)
         .scalar() or 0
     )
     unique_entity_types = (
@@ -351,26 +337,16 @@ def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_curren
     )
     validation_status = {row[0] or "pending": row[1] for row in validation_rows}
 
-    with_sku = (
+    with_canonical_id = (
         db.query(func.count(models.RawEntity.id))
         .filter(models.RawEntity.canonical_id != None, models.RawEntity.canonical_id != "")
         .scalar() or 0
     )
-    with_barcode = (
-        db.query(func.count(models.RawEntity.id))
-        .filter(models.RawEntity.barcode != None, models.RawEntity.barcode != "")
-        .scalar() or 0
-    )
-    with_gtin = (
-        db.query(func.count(models.RawEntity.id))
-        .filter(models.RawEntity.gtin != None, models.RawEntity.gtin != "")
-        .scalar() or 0
-    )
 
-    top_brands = (
-        db.query(models.RawEntity.brand_capitalized, func.count(models.RawEntity.id).label("count"))
-        .filter(models.RawEntity.brand_capitalized != None)
-        .group_by(models.RawEntity.brand_capitalized)
+    top_secondary_labels = (
+        db.query(models.RawEntity.secondary_label, func.count(models.RawEntity.id).label("count"))
+        .filter(models.RawEntity.secondary_label != None)
+        .group_by(models.RawEntity.secondary_label)
         .order_by(func.count(models.RawEntity.id).desc())
         .limit(10)
         .all()
@@ -383,55 +359,26 @@ def get_stats(db: Session = Depends(get_db), _: models.User = Depends(get_curren
         .limit(10)
         .all()
     )
-    status_distribution = (
-        db.query(models.RawEntity.status, func.count(models.RawEntity.id).label("count"))
-        .filter(models.RawEntity.status != None)
-        .group_by(models.RawEntity.status)
+    domain_distribution = (
+        db.query(models.RawEntity.domain, func.count(models.RawEntity.id).label("count"))
+        .filter(models.RawEntity.domain != None)
+        .group_by(models.RawEntity.domain)
         .order_by(func.count(models.RawEntity.id).desc())
         .all()
-    )
-    classification_distribution = (
-        db.query(models.RawEntity.classification, func.count(models.RawEntity.id).label("count"))
-        .filter(models.RawEntity.classification != None)
-        .group_by(models.RawEntity.classification)
-        .order_by(func.count(models.RawEntity.id).desc())
-        .all()
-    )
-    products_with_variants = (
-        db.query(func.count(models.RawEntity.id))
-        .filter(models.RawEntity.variant != None, models.RawEntity.variant != "")
-        .scalar() or 0
-    )
-    unique_products_with_variants = (
-        db.query(func.count(func.distinct(models.RawEntity.primary_label)))
-        .filter(
-            models.RawEntity.variant != None,
-            models.RawEntity.variant != "",
-            models.RawEntity.primary_label != None,
-        )
-        .scalar() or 0
     )
 
     return {
         "total_entities": total_entities,
-        "unique_brands": unique_brands,
-        "unique_models": unique_models,
+        "unique_secondary_labels": unique_secondary_labels,
         "unique_entity_types": unique_entity_types,
-        "entities_with_variants": products_with_variants,
-        "unique_entities_with_variants": unique_products_with_variants,
         "validation_status": validation_status,
         "identifier_coverage": {
-            "with_sku": with_sku,
-            "with_barcode": with_barcode,
-            "with_gtin": with_gtin,
+            "with_canonical_id": with_canonical_id,
             "total": total_entities,
         },
-        "top_brands": [{"name": b[0], "count": b[1]} for b in top_brands],
+        "top_secondary_labels": [{"name": b[0], "count": b[1]} for b in top_secondary_labels],
         "type_distribution": [{"name": t[0], "count": t[1]} for t in type_distribution],
-        "classification_distribution": [
-            {"name": c[0], "count": c[1]} for c in classification_distribution
-        ],
-        "status_distribution": [{"name": s[0], "count": s[1]} for s in status_distribution],
+        "domain_distribution": [{"name": d[0], "count": d[1]} for d in domain_distribution],
     }
 
 
@@ -442,9 +389,9 @@ def get_all_brands(
     _: models.User = Depends(get_current_user),
 ):
     brands = (
-        db.query(models.RawEntity.brand_capitalized, func.count(models.RawEntity.id).label("count"))
-        .filter(models.RawEntity.brand_capitalized != None)
-        .group_by(models.RawEntity.brand_capitalized)
+        db.query(models.RawEntity.secondary_label, func.count(models.RawEntity.id).label("count"))
+        .filter(models.RawEntity.secondary_label != None)
+        .group_by(models.RawEntity.secondary_label)
         .order_by(func.count(models.RawEntity.id).desc())
         .limit(limit)
         .all()
@@ -476,9 +423,9 @@ def get_all_classifications(
     _: models.User = Depends(get_current_user),
 ):
     classes = (
-        db.query(models.RawEntity.classification, func.count(models.RawEntity.id).label("count"))
-        .filter(models.RawEntity.classification != None)
-        .group_by(models.RawEntity.classification)
+        db.query(models.RawEntity.entity_type, func.count(models.RawEntity.id).label("count"))
+        .filter(models.RawEntity.entity_type != None)
+        .group_by(models.RawEntity.entity_type)
         .order_by(func.count(models.RawEntity.id).desc())
         .limit(limit)
         .all()

@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 from backend import database, models
 from backend.auth import get_current_user, require_role
 from backend.database import get_db
-from backend.routers.column_maps import EXPORT_COLUMN_CORRECTIONS, EXPORT_COLUMN_MAPPING
 from backend.routers.deps import _audit, _dispatch_webhook
 
 logger = logging.getLogger(__name__)
@@ -29,47 +28,37 @@ router = APIRouter(tags=["harmonization"])
 
 # ── Harmonization pipeline metadata ──────────────────────────────────────────
 
+from sqlalchemy import or_
+
 HARMONIZATION_STEPS = [
     {
-        "step_id": "consolidate_brands",
-        "name": "Consolidate Brand Columns",
-        "description": "Merge brand_lower into brand_capitalized when empty and apply brand normalization rules.",
-        "order": 1,
+        "step_id":    "normalize_labels",
+        "name":       "Normalize Labels",
+        "description": "Trim whitespace and collapse internal spaces in primary_label and secondary_label.",
+        "field":      "primary_label",
+        "reversible": True,
     },
     {
-        "step_id": "clean_entity_names",
-        "name": "Clean Product Names",
-        "description": "Remove double spaces, trim whitespace, and normalize special characters.",
-        "order": 2,
+        "step_id":    "normalize_canonical_ids",
+        "name":       "Normalize Canonical IDs",
+        "description": "Trim whitespace from canonical_id and set empty strings to NULL.",
+        "field":      "canonical_id",
+        "reversible": True,
     },
     {
-        "step_id": "standardize_volumes",
-        "name": "Standardize Volume/Unit Variants",
-        "description": "Normalize volume formats (250ML → 250 mL, 1L → 1 L, 500gr → 500 g).",
-        "order": 3,
+        "step_id":    "normalize_entity_types",
+        "name":       "Normalize Entity Types",
+        "description": "Lowercase and strip entity_type values.",
+        "field":      "entity_type",
+        "reversible": True,
     },
     {
-        "step_id": "consolidate_gtin",
-        "name": "Consolidate GTIN Columns",
-        "description": "Merge 4 product code columns and 7 GTIN reason fields into single authoritative values.",
-        "order": 4,
+        "step_id":    "set_default_validation",
+        "name":       "Set Default Validation Status",
+        "description": "Set validation_status to 'pending' for any rows where it is NULL or empty.",
+        "field":      "validation_status",
+        "reversible": False,
     },
-    {
-        "step_id": "fix_export_typos",
-        "name": "Fix Export Column Name Typos",
-        "description": "Correct EQUIMAPIENTO → EQUIPAMIENTO, PRODRUCTO → PRODUCTO in export headers.",
-        "order": 5,
-    },
-]
-
-VOLUME_PATTERNS = [
-    (r"(\d+)\s*(?:ML|Ml|ml)", r"\1 mL"),
-    (r"(\d+(?:\.\d+)?)\s*(?:LT|Lt|lt|lts|LTS|Lts)\b", r"\1 L"),
-    (r"(\d+(?:\.\d+)?)\s*[Ll]\b(?![\w])", r"\1 L"),
-    (r"(\d+(?:\.\d+)?)\s*(?:KG|Kg|kg|kgs|KGS)\b", r"\1 kg"),
-    (r"(\d+)\s*(?:GR|Gr|gr|grs|GRS)\b", r"\1 g"),
-    (r"(\d+(?:\.\d+)?)\s*(?:CM|Cm|cm)\b", r"\1 cm"),
-    (r"(\d+(?:\.\d+)?)\s*(?:MT|Mt|mt|mts|MTS)\b", r"\1 m"),
 ]
 
 _PREVIEW_ROW_CAP = 10_000  # Max rows examined during preview to avoid OOM
@@ -77,197 +66,109 @@ _PREVIEW_ROW_CAP = 10_000  # Max rows examined during preview to avoid OOM
 
 # ── Step functions ────────────────────────────────────────────────────────────
 
-def _step_consolidate_brands(db: Session, preview_only: bool):
-    changes = []
-    q = db.query(models.RawEntity)
-    if preview_only:
-        q = q.limit(_PREVIEW_ROW_CAP)
-    entities = q.all()
-
-    brand_rules = db.query(models.NormalizationRule).filter(
-        models.NormalizationRule.field_name == "brand_capitalized",
-        models.NormalizationRule.is_regex == False,
+def _step_normalize_labels(db: Session, preview_only: bool):
+    entities = db.query(models.RawEntity).filter(
+        or_(
+            models.RawEntity.primary_label != None,
+            models.RawEntity.secondary_label != None,
+        )
     ).all()
-    brand_map = {r.original_value: r.normalized_value for r in brand_rules}
-
+    changes = []
     for p in entities:
-        new_brand = p.brand_capitalized
-        if not new_brand or not new_brand.strip():
-            if p.brand_lower and p.brand_lower.strip():
-                new_brand = p.brand_lower.strip()
-            else:
+        for field in ("primary_label", "secondary_label"):
+            val = getattr(p, field)
+            if val is None:
                 continue
-        new_brand = new_brand.strip()
-        if new_brand in brand_map:
-            new_brand = brand_map[new_brand]
-        if new_brand != p.brand_capitalized:
-            changes.append({
-                "record_id": p.id,
-                "field":     "brand_capitalized",
-                "old_value": p.brand_capitalized,
-                "new_value": new_brand,
-            })
-            if not preview_only:
-                p.brand_capitalized = new_brand
-
+            cleaned = re.sub(r"\s+", " ", val).strip()
+            if cleaned != val:
+                changes.append({
+                    "record_id": p.id,
+                    "field":     field,
+                    "old_value": val,
+                    "new_value": cleaned,
+                })
+                if not preview_only:
+                    setattr(p, field, cleaned)
     if not preview_only:
         db.commit()
     return changes
 
 
-def _step_clean_entity_names(db: Session, preview_only: bool):
+def _step_normalize_canonical_ids(db: Session, preview_only: bool):
+    entities = db.query(models.RawEntity).filter(
+        models.RawEntity.canonical_id != None
+    ).all()
     changes = []
-    q = db.query(models.RawEntity).filter(models.RawEntity.primary_label != None)
-    if preview_only:
-        q = q.limit(_PREVIEW_ROW_CAP)
-    entities = q.all()
-
     for p in entities:
-        original = p.primary_label
-        if not original:
+        val = p.canonical_id
+        if val is None:
             continue
-        cleaned = original
-        cleaned = cleaned.replace("\u00a0", " ")
-        cleaned = cleaned.replace("\t", " ")
-        cleaned = re.sub(r"\s{2,}", " ", cleaned)
-        cleaned = cleaned.strip()
-        if cleaned != original:
+        cleaned = val.strip() or None
+        if cleaned != val:
             changes.append({
                 "record_id": p.id,
-                "field":     "primary_label",
-                "old_value": original,
+                "field":     "canonical_id",
+                "old_value": val,
                 "new_value": cleaned,
             })
             if not preview_only:
-                p.primary_label = cleaned
-
+                p.canonical_id = cleaned
     if not preview_only:
         db.commit()
     return changes
 
 
-def _step_standardize_volumes(db: Session, preview_only: bool):
-    changes = []
-    target_fields = ["primary_label", "measure"]
-    regex_rules = db.query(models.NormalizationRule).filter(
-        models.NormalizationRule.is_regex == True
+def _step_normalize_entity_types(db: Session, preview_only: bool):
+    entities = db.query(models.RawEntity).filter(
+        models.RawEntity.entity_type != None
     ).all()
-
-    for field_name in target_fields:
-        column = getattr(models.RawEntity, field_name)
-        q = db.query(models.RawEntity).filter(column != None)
-        if preview_only:
-            q = q.limit(_PREVIEW_ROW_CAP)
-        entities = q.all()
-
-        for p in entities:
-            original = getattr(p, field_name)
-            if not original:
-                continue
-            modified = original
-            for pattern, replacement in VOLUME_PATTERNS:
-                modified = re.sub(pattern, replacement, modified)
-            for rule in regex_rules:
-                if rule.field_name == field_name:
-                    try:
-                        modified = re.sub(rule.original_value, rule.normalized_value, modified)
-                    except re.error:
-                        pass
-            if modified != original:
-                changes.append({
-                    "record_id": p.id,
-                    "field":     field_name,
-                    "old_value": original,
-                    "new_value": modified,
-                })
-                if not preview_only:
-                    setattr(p, field_name, modified)
-
-    if not preview_only:
-        db.commit()
-    return changes
-
-
-def _step_consolidate_gtin(db: Session, preview_only: bool):
     changes = []
-    q = db.query(models.RawEntity)
-    if preview_only:
-        q = q.limit(_PREVIEW_ROW_CAP)
-    entities = q.all()
-
-    code_fields = [
-        "entity_code_universal_1",
-        "entity_code_universal_2",
-        "entity_code_universal_3",
-        "entity_code_universal_4",
-    ]
-    reason_fields = [
-        "gtin_empty_reason_1",
-        "gtin_empty_reason_2",
-        "gtin_empty_reason_3",
-        "gtin_entity_reason",
-        "gtin_reason_lower",
-        "gtin_empty_reason_typo",
-    ]
-
     for p in entities:
-        current_gtin = p.gtin
-        if not current_gtin or not current_gtin.strip():
-            for code_field in code_fields:
-                val = getattr(p, code_field)
-                if val and val.strip():
-                    changes.append({
-                        "record_id": p.id,
-                        "field":     "gtin",
-                        "old_value": current_gtin,
-                        "new_value": val.strip(),
-                    })
-                    if not preview_only:
-                        p.gtin = val.strip()
-                    break
-
-        current_reason = p.gtin_reason
-        if not current_reason or not current_reason.strip():
-            for reason_field in reason_fields:
-                val = getattr(p, reason_field)
-                if val and val.strip():
-                    changes.append({
-                        "record_id": p.id,
-                        "field":     "gtin_reason",
-                        "old_value": current_reason,
-                        "new_value": val.strip(),
-                    })
-                    if not preview_only:
-                        p.gtin_reason = val.strip()
-                    break
-
-    if not preview_only:
-        db.commit()
-    return changes
-
-
-def _step_fix_export_typos(db: Session, preview_only: bool):
-    changes = []
-    for field, corrected_header in EXPORT_COLUMN_CORRECTIONS.items():
-        current_header = EXPORT_COLUMN_MAPPING.get(field, "")
-        if current_header != corrected_header:
+        val = p.entity_type
+        if val is None:
+            continue
+        cleaned = val.strip().lower()
+        if cleaned != val:
             changes.append({
-                "record_id": 0,
-                "field":     field,
-                "old_value": current_header,
-                "new_value": corrected_header,
+                "record_id": p.id,
+                "field":     "entity_type",
+                "old_value": val,
+                "new_value": cleaned,
             })
             if not preview_only:
-                EXPORT_COLUMN_MAPPING[field] = corrected_header
+                p.entity_type = cleaned
+    if not preview_only:
+        db.commit()
+    return changes
+
+
+def _step_set_default_validation(db: Session, preview_only: bool):
+    entities = db.query(models.RawEntity).filter(
+        or_(
+            models.RawEntity.validation_status == None,
+            models.RawEntity.validation_status == "",
+        )
+    ).all()
+    changes = []
+    for p in entities:
+        changes.append({
+            "record_id": p.id,
+            "field":     "validation_status",
+            "old_value": p.validation_status,
+            "new_value": "pending",
+        })
+        if not preview_only:
+            p.validation_status = "pending"
+    if not preview_only:
+        db.commit()
     return changes
 
 
 STEP_FUNCTIONS = {
-    "consolidate_brands":  _step_consolidate_brands,
-    "clean_entity_names":  _step_clean_entity_names,
-    "standardize_volumes": _step_standardize_volumes,
-    "consolidate_gtin":    _step_consolidate_gtin,
-    "fix_export_typos":    _step_fix_export_typos,
+    "normalize_labels":        _step_normalize_labels,
+    "normalize_canonical_ids": _step_normalize_canonical_ids,
+    "normalize_entity_types":  _step_normalize_entity_types,
+    "set_default_validation":  _step_set_default_validation,
 }
 
 

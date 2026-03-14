@@ -9,12 +9,10 @@ from backend import models
 
 def _seed_entities(db, n=5):
     """Insert n raw entities with varied data."""
-    years = ["2021-01-01", "2022-03-15", "2023-06-01", "2023-08-20", "2024-02-01"]
     for i in range(n):
         db.add(models.RawEntity(
             primary_label=f"Entity {i}",
             domain="default",
-            creation_date=years[i % len(years)],
             enrichment_status="completed" if i % 2 == 0 else "none",
             enrichment_citation_count=10 * (i + 1) if i % 2 == 0 else None,
             enrichment_source="openalex" if i % 2 == 0 else None,
@@ -93,9 +91,8 @@ def test_dashboard_brand_matrix_top5(client, auth_headers, db_session):
     # Seed entities with many different brands
     for i in range(10):
         db_session.add(models.RawEntity(
-            entity_name=f"Entity brand {i}",
-            brand_capitalized=f"Brand{i}",
-            creation_date="2023-01-01",
+            primary_label=f"Entity brand {i}",
+            secondary_label=f"Brand{i}",
             enrichment_status="none",
         ))
     db_session.commit()

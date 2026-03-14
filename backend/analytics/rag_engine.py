@@ -82,8 +82,8 @@ def index_entity(entity, integration_record) -> Dict[str, Any]:
 
     # Build the canonical text representation of the entity for embedding
     parts = [
-        f"Name: {entity.entity_name or ''}",
-        f"Brand: {entity.brand_capitalized or ''}",
+        f"Name: {entity.primary_label or ''}",
+        f"Brand: {entity.secondary_label or ''}",
         f"Type: {entity.entity_type or ''}",
         f"Concepts: {entity.enrichment_concepts or ''}",
         f"Citation Count: {entity.enrichment_citation_count or 0}",
@@ -104,7 +104,7 @@ def index_entity(entity, integration_record) -> Dict[str, Any]:
             embedding=embedding,
             metadata={
                 "entity_id": entity.id,
-                "entity_name": entity.entity_name or "",
+                "entity_name": entity.primary_label or "",
                 "citation_count": entity.enrichment_citation_count or 0,
                 "source": entity.enrichment_source or "unknown",
                 "provider_used": adapter.provider_name,

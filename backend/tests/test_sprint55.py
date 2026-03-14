@@ -16,10 +16,10 @@ from backend import models
 
 def _make_entity(db, name, brand, model=None, sku=None):
     e = models.RawEntity(
-        entity_name=name,
-        brand_capitalized=brand,
-        model=model,
-        sku=sku,
+        primary_label=name,
+        secondary_label=brand,
+        canonical_id=sku,
+        entity_type=model,
         enrichment_status="none",
         validation_status="pending",
     )
@@ -63,7 +63,7 @@ class TestCandidates:
         data = r.json()
         assert len(data) >= 1
         assert data[0]["score"] >= 0.8
-        assert "entity_name" in data[0]["matched_fields"]
+        assert "primary_label" in data[0]["matched_fields"]
 
     def test_candidates_sorted_by_score_desc(self, client, db_session, auth_headers):
         # Two pairs — one high score, one medium

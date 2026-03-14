@@ -8,23 +8,22 @@ import { apiFetch } from "@/lib/api";
 
 interface Entity {
     id: number;
-    entity_name: string | null;
-    brand_capitalized: string | null;
-    status: string | null;
-    classification: string | null;
-    model: string | null;
-    sku: string | null;
+    primary_label: string | null;
+    secondary_label: string | null;
+    canonical_id: string | null;
+    entity_type: string | null;
+    domain: string | null;
+    validation_status: string | null;
     [key: string]: unknown;
 }
 
 const EDITABLE_FIELDS = [
-    { key: "entity_name",       label: "Name" },
-    { key: "brand_capitalized", label: "Primary Label" },
-    { key: "status",            label: "Status" },
-    { key: "classification",    label: "Classification" },
-    { key: "model",             label: "Secondary Label" },
-    { key: "variant",           label: "Variant" },
-    { key: "entity_type",       label: "Entity Type" },
+    { key: "primary_label",   label: "Primary Label" },
+    { key: "secondary_label", label: "Secondary Label" },
+    { key: "canonical_id",    label: "Canonical ID" },
+    { key: "entity_type",     label: "Entity Type" },
+    { key: "domain",          label: "Domain" },
+    { key: "validation_status", label: "Validation Status" },
 ];
 
 const inputClass = "h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white";
@@ -263,11 +262,11 @@ export default function BulkEditPage() {
                                     />
                                 </th>
                                 <th className="px-4 py-3">ID</th>
-                                <th className="px-4 py-3">Name</th>
                                 <th className="px-4 py-3">Primary Label</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">Classification</th>
                                 <th className="px-4 py-3">Secondary Label</th>
+                                <th className="px-4 py-3">Canonical ID</th>
+                                <th className="px-4 py-3">Entity Type</th>
+                                <th className="px-4 py-3">Validation Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
@@ -294,21 +293,21 @@ export default function BulkEditPage() {
                                         </td>
                                         <td className="px-4 py-3 font-mono text-xs text-gray-400">{entity.id}</td>
                                         <td className="max-w-[200px] truncate px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                            {entity.entity_name || "—"}
+                                            {entity.primary_label || "—"}
                                         </td>
                                         <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                            {entity.brand_capitalized || "—"}
+                                            {entity.secondary_label || "—"}
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-mono text-xs">
+                                            {entity.canonical_id || "—"}
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                                            {entity.entity_type || "—"}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <Badge variant={entity.status === "active" ? "success" : "default"}>
-                                                {entity.status || "—"}
+                                            <Badge variant={entity.validation_status === "valid" ? "success" : "default"}>
+                                                {entity.validation_status || "—"}
                                             </Badge>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                                            {entity.classification || "—"}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                                            {entity.model || "—"}
                                         </td>
                                     </tr>
                                 );

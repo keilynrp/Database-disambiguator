@@ -91,12 +91,12 @@ def enrich_single_record(db: Session, entity: models.RawEntity) -> models.RawEnt
     Uses a cascade fallback strategy prioritizing Premium Data:
     Web of Science (BYOK) -> OpenAlex (Free API) -> Google Scholar (Scraping).
     """
-    if not entity.entity_name and not entity.model:
+    if not entity.primary_label:
         entity.enrichment_status = "failed"
         db.commit()
         return entity
 
-    query = entity.entity_name or entity.model
+    query = entity.primary_label
     enriched_data = None
     source = "Unknown"
 
