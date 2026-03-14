@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useBranding } from "../contexts/BrandingContext";
@@ -867,6 +867,174 @@ function NotificationsTab({ toast }: { toast: (msg: string, v?: any) => void }) 
     );
 }
 
+// ── Logo drop zone ─────────────────────────────────────────────────────────────
+
+const LOGO_ACCEPT = "image/png,image/jpeg,image/jpg,image/svg+xml,image/webp,image/gif";
+const LOGO_MAX_MB = 2;
+
+function LogoDropZone({
+    currentUrl,
+    accentColor,
+    onUploaded,
+    onRemove,
+}: {
+    currentUrl: string;
+    accentColor: string;
+    onUploaded: (url: string) => void;
+    onRemove: () => void;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [dragging, setDragging] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const upload = useCallback(async (file: File) => {
+        setError(null);
+        if (!file.type.startsWith("image/")) {
+            setError("File must be an image (PNG, JPG, SVG, WebP, GIF).");
+            return;
+        }
+        if (file.size > LOGO_MAX_MB * 1024 * 1024) {
+            setError(`File is too large. Maximum is ${LOGO_MAX_MB} MB.`);
+            return;
+        }
+        setUploading(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await apiFetch("/branding/logo", { method: "POST", body: fd });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+                throw new Error(err.detail ?? "Upload failed");
+            }
+            const data = await res.json();
+            onUploaded(data.logo_url);
+        } catch (e: any) {
+            setError(e.message ?? "Upload failed");
+        } finally {
+            setUploading(false);
+        }
+    }, [onUploaded]);
+
+    function handleDrop(e: React.DragEvent) {
+        e.preventDefault();
+        setDragging(false);
+        const file = e.dataTransfer.files[0];
+        if (file) upload(file);
+    }
+
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (file) upload(file);
+        e.target.value = "";
+    }
+
+    async function handleRemove() {
+        setError(null);
+        try {
+            await apiFetch("/branding/logo", { method: "DELETE" });
+            onRemove();
+        } catch {
+            setError("Failed to remove logo.");
+        }
+    }
+
+    // Resolve absolute URL for images served from the backend
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+    const displayUrl = currentUrl?.startsWith("/static/") ? `${apiBase}${currentUrl}` : currentUrl;
+
+    return (
+        <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                Logo <span className="font-normal text-gray-400">— PNG, JPG, SVG, WebP, GIF · max {LOGO_MAX_MB} MB</span>
+            </label>
+
+            {/* Drop zone */}
+            <div
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => !uploading && inputRef.current?.click()}
+                className={`relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 transition-colors ${
+                    dragging
+                        ? "border-indigo-400 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-500/10"
+                        : "border-gray-200 bg-gray-50 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700 dark:bg-gray-800/40 dark:hover:border-indigo-500/40"
+                }`}
+            >
+                {uploading ? (
+                    <>
+                        <svg className="h-6 w-6 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Uploading…</p>
+                    </>
+                ) : displayUrl ? (
+                    <>
+                        {/* Current logo preview */}
+                        <div
+                            className="flex h-16 w-16 items-center justify-center rounded-xl p-2"
+                            style={{ backgroundColor: accentColor }}
+                        >
+                            <img
+                                src={displayUrl}
+                                alt="Current logo"
+                                className="h-full w-full object-contain"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                            />
+                        </div>
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Drop a new image to replace</p>
+                        <p className="text-[11px] text-gray-400 dark:text-gray-500">or click to browse</p>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-500/10">
+                            <svg className="h-6 w-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                                    d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 20.25h18M19.5 9.75a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                            </svg>
+                        </div>
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Drop your logo here</p>
+                        <p className="text-[11px] text-gray-400 dark:text-gray-500">or click to browse</p>
+                    </>
+                )}
+                <input
+                    ref={inputRef}
+                    type="file"
+                    accept={LOGO_ACCEPT}
+                    className="hidden"
+                    onChange={handleChange}
+                />
+            </div>
+
+            {/* Actions row */}
+            {displayUrl && !uploading && (
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleRemove(); }}
+                    className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Remove logo
+                </button>
+            )}
+
+            {error && (
+                <p className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    {error}
+                </p>
+            )}
+        </div>
+    );
+}
+
+
 // ── Tab: Branding ─────────────────────────────────────────────────────────────
 
 function BrandingTab({ toast }: { toast: (msg: string, v?: any) => void }) {
@@ -890,6 +1058,19 @@ function BrandingTab({ toast }: { toast: (msg: string, v?: any) => void }) {
         });
     }, [branding]);
 
+    // Called when logo upload succeeds — immediately refreshes global branding context
+    const handleLogoUploaded = useCallback(async (url: string) => {
+        setForm(prev => ({ ...prev, logo_url: url }));
+        await refreshBranding();
+        toast("Logo updated", "success");
+    }, [refreshBranding, toast]);
+
+    const handleLogoRemoved = useCallback(async () => {
+        setForm(prev => ({ ...prev, logo_url: "" }));
+        await refreshBranding();
+        toast("Logo removed", "success");
+    }, [refreshBranding, toast]);
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -912,11 +1093,17 @@ function BrandingTab({ toast }: { toast: (msg: string, v?: any) => void }) {
     const fld = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
         setForm(prev => ({ ...prev, [k]: e.target.value }));
 
+    // Resolve absolute URL for preview
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+    const previewLogoUrl = form.logo_url?.startsWith("/static/")
+        ? `${apiBase}${form.logo_url}`
+        : form.logo_url;
+
     return (
         <div className="space-y-4">
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <h3 className="mb-4 text-base font-semibold text-gray-900 dark:text-white">Platform Identity</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                     <div>
                         <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Platform Name</label>
                         <input className={inputClass} value={form.platform_name} onChange={fld("platform_name")} placeholder="UKIP" />
@@ -933,13 +1120,17 @@ function BrandingTab({ toast }: { toast: (msg: string, v?: any) => void }) {
                             <input className={inputClass} value={form.accent_color} onChange={fld("accent_color")} placeholder="#6366f1" />
                         </div>
                     </div>
+
+                    {/* Logo — drag & drop zone spans full width */}
                     <div className="sm:col-span-2">
-                        <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Logo URL <span className="font-normal text-gray-400">(optional)</span></label>
-                        <input className={inputClass} value={form.logo_url} onChange={fld("logo_url")} placeholder="https://example.com/logo.png" />
-                        {form.logo_url && (
-                            <img src={form.logo_url} alt="Logo preview" className="mt-2 h-10 w-auto rounded object-contain" onError={e => (e.currentTarget.hidden = true)} />
-                        )}
+                        <LogoDropZone
+                            currentUrl={form.logo_url}
+                            accentColor={form.accent_color}
+                            onUploaded={handleLogoUploaded}
+                            onRemove={handleLogoRemoved}
+                        />
                     </div>
+
                     <div className="sm:col-span-2">
                         <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Footer Text</label>
                         <input className={inputClass} value={form.footer_text} onChange={fld("footer_text")} placeholder="Universal Knowledge Intelligence Platform" />
@@ -952,11 +1143,11 @@ function BrandingTab({ toast }: { toast: (msg: string, v?: any) => void }) {
                 <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Preview</h3>
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/50">
                     <div
-                        className="flex h-8 w-8 items-center justify-center rounded-lg"
+                        className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg"
                         style={{ backgroundColor: form.accent_color }}
                     >
-                        {form.logo_url ? (
-                            <img src={form.logo_url} alt="" className="h-5 w-5 object-contain" onError={e => (e.currentTarget.hidden = true)} />
+                        {previewLogoUrl ? (
+                            <img src={previewLogoUrl} alt="" className="h-full w-full object-contain p-0.5" onError={e => (e.currentTarget.hidden = true)} />
                         ) : (
                             <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />

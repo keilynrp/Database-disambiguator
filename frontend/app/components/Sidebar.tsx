@@ -4,7 +4,38 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useSidebar } from "./SidebarProvider";
 import { useLanguage } from "../contexts/LanguageContext";
-import { useBranding } from "../contexts/BrandingContext";
+import { useBranding, type BrandingSettings } from "../contexts/BrandingContext";
+
+// ── Logo icon — shows uploaded image or default DB icon ───────────────────────
+
+function LogoIcon({ branding, size = 8 }: { branding: BrandingSettings; size?: number }) {
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+  const logoSrc = branding.logo_url?.startsWith("/static/")
+    ? `${apiBase}${branding.logo_url}`
+    : branding.logo_url || "";
+  const px = `h-${size} w-${size}`;
+
+  return (
+    <div
+      className={`flex ${px} items-center justify-center overflow-hidden rounded-lg`}
+      style={{ backgroundColor: branding.accent_color || "#6366f1" }}
+    >
+      {logoSrc ? (
+        <img
+          src={logoSrc}
+          alt={branding.platform_name}
+          className="h-full w-full object-contain p-1"
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : (
+        <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+        </svg>
+      )}
+    </div>
+  );
+}
 
 interface NavItem {
   label: string;
@@ -360,11 +391,7 @@ export default function Sidebar() {
         <div className="flex h-16 items-center justify-between border-b border-gray-200 px-6 dark:border-gray-800">
           {(!collapsed || mobileOpen) && (
             <Link href="/" className="flex items-center gap-2" onClick={closeMobile}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-                <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-                </svg>
-              </div>
+              <LogoIcon branding={branding} size={8} />
               <span className="text-base font-semibold text-gray-900 dark:text-white">{branding.platform_name}</span>
             </Link>
           )}

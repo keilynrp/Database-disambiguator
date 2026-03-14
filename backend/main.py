@@ -9,8 +9,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import pathlib
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -337,3 +340,8 @@ app.include_router(entity_linker.router)
 app.include_router(scheduled_imports.router)
 app.include_router(relationships.router)
 app.include_router(graph_export.router)
+
+# ── Static file serving (uploaded logos etc.) ─────────────────────────────────
+_static_dir = pathlib.Path("static")
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
