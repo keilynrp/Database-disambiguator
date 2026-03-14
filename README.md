@@ -11,7 +11,7 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-OLAP-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)](https://duckdb.org/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20DB-ff6b35?style=for-the-badge)](https://www.trychroma.com/)
-[![Tests](https://img.shields.io/badge/Tests-881%20passing-brightgreen?style=for-the-badge)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-950%20passing-brightgreen?style=for-the-badge)](backend/tests/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
 A domain-agnostic intelligence platform that ingests raw data, harmonizes it, enriches it against global knowledge bases, runs OLAP analytics and stochastic simulations, builds entity relationship graphs, and lets you query everything through an agentic RAG-powered AI assistant.
@@ -24,7 +24,7 @@ A domain-agnostic intelligence platform that ingests raw data, harmonizes it, en
 
 ## Why UKIP?
 
-Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 71 development sprints.
+Most data platforms force you to choose: clean your data **or** analyze it. UKIP does both in a single pipeline. It started as a catalog deduplication tool and evolved into a full research intelligence engine across 73 development sprints.
 
 **What it does:**
 
@@ -52,8 +52,10 @@ One rule: **Justified Complexity** ([details](docs/ARCHITECTURE.md)).
 
 ### Data Operations
 - **Entity Catalog** — Browse, search, inline-edit, and delete records across any domain. Universal schema (`primary_label`, `secondary_label`, `canonical_id`, `entity_type`, `domain`). Dynamic pagination, FTS5 full-text search.
-- **Entity Detail Page** — Dedicated route (`/entities/:id`) with five tabs: Overview (inline editing), Enrichment (Monte Carlo chart + concepts), Authority (candidate review), Comments (threaded annotations), and **Graph** (relationship network).
+- **Entity Detail Page** — Dedicated route (`/entities/:id`) with six tabs: Overview (inline editing + quality score), Enrichment (Monte Carlo chart + concepts), Authority (candidate review), Comments (threaded annotations), Graph (relationship network + metrics strip), and Quality.
 - **Entity Relationship Graph** — Typed, weighted directed edges between entities (`cites`, `authored-by`, `belongs-to`, `related-to`). BFS subgraph traversal up to depth 2. SVG radial visualization with color-coded edge types, directional arrows, and hover tooltips. Manage relationships inline from the Graph tab.
+- **Entity Quality Score** — 0.0–1.0 composite index per entity: field completeness (40%), enrichment coverage (30%), confirmed authority (20%), relationship count (10%). Tri-color badge (green/amber/red), `min_quality` filter, quality sort, and bulk recompute endpoint.
+- **Graph Analytics Dashboard** — Whole-graph KPIs, top-10 PageRank leaderboard, top-10 degree centrality table, and interactive Path Finder with BFS hop-chain visualization (`/analytics/graph`).
 - **Entity Linker** — Fuzzy pairwise duplicate detection across the catalog. Configurable similarity threshold, side-by-side field comparison, merge (winner absorbs loser's non-empty fields), and dismiss (persisted with undo).
 - **Bulk Import Wizard** — 5-step guided import: Upload → Map Fields → Domain → Validate → Import. Drag-and-drop file zone, auto-preview (`POST /upload/preview`) with format detection, column auto-mapping, and sample rows. Science formats (BibTeX/RIS) show fixed read-only mapping. Custom column→field routing with skip support.
 - **Multi-format Import/Export** — Excel, CSV, JSON, XML, BibTeX, RIS, Parquet, RDF/TTL. Drag-and-drop pre-analyzer. Export to Excel with clean universal headers.
@@ -66,6 +68,7 @@ One rule: **Justified Complexity** ([details](docs/ARCHITECTURE.md)).
 - **Harmonization Pipeline** — Universal normalization steps (`normalize_labels`, `normalize_canonical_ids`, `normalize_entity_types`, `set_default_validation`) with undo/redo history and full change tracking.
 
 ### Analytics & Intelligence
+- **Graph Analytics** — Pure-Python PageRank (power iteration, damping 0.85), degree centrality (in/out + by relation type), weakly-connected components, and BFS shortest path with hop labels. Global stats API + per-entity metrics endpoint.
 - **OLAP Cube Explorer** — DuckDB-powered multi-dimensional queries with drill-down navigation and Excel pivot export.
 - **Monte Carlo Citation Projections** — Geometric Brownian Motion model simulates 5,000 citation trajectories per record. Interactive area charts.
 - **ROI Calculator** — Monte Carlo I+D projection engine. Models adoption uncertainty (Normal distribution, configurable σ) across 3–20 year horizons. Returns P5–P95 percentiles, break-even probability, year-by-year ROI trajectory, and final distribution histogram.
@@ -214,7 +217,7 @@ Open `http://localhost:3004`
 
 ```bash
 python -m pytest backend/tests/ -x -q
-# 881 tests, all passing
+# 950 tests, all passing
 ```
 
 ---
@@ -522,7 +525,7 @@ ukip/
 │   │   ├── search.py              # FTS5 global search + index rebuild
 │   │   ├── stores.py              # Store connector management
 │   │   └── webhooks.py            # Outbound webhook CRUD + delivery
-│   ├── tests/                     # 881 tests across 36 files
+│   ├── tests/                     # 950 tests across 38 files
 │   ├── audit.py                   # AuditMiddleware (HTTP-level interception)
 │   ├── auth.py                    # JWT + RBAC + account lockout
 │   ├── circuit_breaker.py         # External API resilience
@@ -648,6 +651,8 @@ ukip/
 | 70 | Graph | Entity Relationship Graph — typed directed edges (`cites`, `authored-by`, `belongs-to`, `related-to`), weighted, BFS subgraph endpoint, SVG radial visualization, `RelationshipManager` on entity detail |
 | 71 | Import | Bulk Import Wizard — 5-step frontend wizard (Upload → Map Fields → Domain → Validate → Import), `POST /upload/preview`, `domain` + `field_mapping` Form params on `/upload`, science formats auto-domain |
 | — | Cleanup | Universal Schema Cleanup — removed all 33 e-commerce hybrid properties from model; replaced `Entity` schema, `COLUMN_MAPPING`, harmonization steps, and analytics queries with domain-agnostic equivalents; 881 tests passing |
+| 72 | Quality | Entity Quality Score — 0.0–1.0 composite index per entity (field completeness 40%, enrichment 30%, authority 20%, relationships 10%); `POST /entities/quality/compute`, `GET /entities/{id}/quality`; quality badge in entity list; `min_quality` filter and quality sort; knowledge-gap detector integration; 908 tests |
+| 73 | Graph | Graph Analytics — pure-Python PageRank (power iteration, damping 0.85), degree centrality (in/out + by relation type), weakly-connected components (BFS), BFS shortest path with hop labels; `GET /graph/stats`, `/graph/path`, `/graph/components`, `/entities/{id}/graph/metrics`; Graph Analytics dashboard page; 950 tests |
 
 ### Up Next 🔜
 
